@@ -299,7 +299,7 @@ func TestARelationIsLoggedBeforeAndAfter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	described, err := logger.Activity(ctx, g).On(fresh.(*article)).Log(":subject.title by :subject.author.name")
+	described, err := logger.Activity(ctx, g).On(fresh).Log(":subject.title by :subject.author.name")
 	if err != nil || described.Description != "Story, revised by Bia" {
 		t.Errorf("description = %q (%v)", described.Description, err)
 	}

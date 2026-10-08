@@ -25,7 +25,6 @@ type Record interface {
 	ToArray() map[string]any
 	Save(ctx context.Context, g security.Grant) (bool, error)
 	Delete(ctx context.Context, g security.Grant) (bool, error)
-	Fresh(ctx context.Context, g security.Grant, with ...string) (model.Entity, error)
 }
 
 // Typed is implemented by a record whose kind is not its table's name -- the
@@ -174,7 +173,7 @@ func (l *Logger) Save(ctx context.Context, g security.Grant, record Record) (boo
 			// What the row holds before this write, as stored -- the same
 			// reading the after side gets, so a value is never reported as
 			// changed by the precision it was kept in.
-			attributes, array, err := snapshot(ctx, g, record, options)
+			attributes, array, err := l.snapshot(ctx, g, record, options)
 			if err != nil {
 				return err
 			}
@@ -184,7 +183,7 @@ func (l *Logger) Save(ctx context.Context, g security.Grant, record Record) (boo
 		if saved, err = record.Save(ctx, g); err != nil || !saved || !logs {
 			return err
 		}
-		attributes, array, err := snapshot(ctx, g, record, options)
+		attributes, array, err := l.snapshot(ctx, g, record, options)
 		if err != nil {
 			return err
 		}
@@ -242,7 +241,7 @@ func (l *Logger) deleting(ctx context.Context, g security.Grant, record Record, 
 		if deleted, err = remove(ctx, g); err != nil || !deleted || !logs {
 			return err
 		}
-		attributes, array, err := snapshot(ctx, g, record, options)
+		attributes, array, err := l.snapshot(ctx, g, record, options)
 		if err != nil {
 			return err
 		}
@@ -268,7 +267,7 @@ func (l *Logger) Restore(ctx context.Context, g security.Grant, record Restorabl
 		if restored, err = record.Restore(ctx, g); err != nil || !restored || !logs {
 			return err
 		}
-		attributes, array, err := snapshot(ctx, g, record, options)
+		attributes, array, err := l.snapshot(ctx, g, record, options)
 		if err != nil {
 			return err
 		}
@@ -277,15 +276,19 @@ func (l *Logger) Restore(ctx context.Context, g security.Grant, record Restorabl
 	return restored, err
 }
 
-// snapshot reads the record back as stored, with the relations its options
-// name loaded; a row that is gone answers what the record holds.
-func snapshot(ctx context.Context, g security.Grant, record Record, options LogOptions) (map[string]any, map[string]any, error) {
-	fresh, err := record.Fresh(ctx, g, relationsOf(options)...)
-	if err != nil {
-		return nil, nil, err
-	}
-	if reread, ok := fresh.(Record); ok && reread != nil && fresh != nil {
-		return reread.GetAttributes(), mergeArrays(reread.ToArray(), reread.GetAttributes()), nil
+// snapshot reads the record back as stored -- trashed or not -- with the
+// relations its options name loaded, through its table rather than its own
+// Fresh, which a generated model narrows to its own type; a row that is gone
+// answers what the record holds.
+func (l *Logger) snapshot(ctx context.Context, g security.Grant, record Record, options LogOptions) (map[string]any, map[string]any, error) {
+	if record.Exists() && record.GetKey() != nil {
+		fresh, err := record.Table().Query(l.db).WithoutGlobalScopes().With(relationsOf(options)...).WhereKey(record.GetKey()).First(ctx, g)
+		if err != nil {
+			return nil, nil, err
+		}
+		if reread, ok := fresh.(Record); ok && fresh != nil {
+			return reread.GetAttributes(), mergeArrays(reread.ToArray(), reread.GetAttributes()), nil
+		}
 	}
 	return record.GetAttributes(), mergeArrays(record.ToArray(), record.GetAttributes()), nil
 }

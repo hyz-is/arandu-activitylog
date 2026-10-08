@@ -51,6 +51,16 @@ var (
 
 func (a *article) ActivityLogOptions() activitylog.LogOptions { return articleOptions }
 
+// Fresh is narrowed to the model's own type, as aru model:build generates it:
+// the logger must not depend on the promoted one.
+func (a *article) Fresh(ctx context.Context, g security.Grant, with ...string) (*article, error) {
+	fresh, err := a.Model.Fresh(ctx, g, with...)
+	if err != nil || fresh == nil {
+		return nil, err
+	}
+	return fresh.(*article), nil
+}
+
 func (a *article) ActivityEvents() []string {
 	if articleEvents == nil {
 		return activitylog.DefaultEvents
