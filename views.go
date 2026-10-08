@@ -38,7 +38,7 @@ const PublishCommand = "aru vendor:publish --apply"
 // Row is one entry as a screen shows it.
 type Row struct {
 	ID, URL, When, Log, Event, Description string
-	Subject, Causer                         string
+	Subject, Causer                        string
 }
 
 // ChangeRow is one attribute of a record's change.
