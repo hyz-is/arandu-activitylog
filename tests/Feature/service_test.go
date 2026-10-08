@@ -156,6 +156,24 @@ func TestTheModuleDeclaresItsTableScheduleAndRoutes(t *testing.T) {
 	if len(tasks) != 1 || tasks[0].Scope != foundation.PerTenant || tasks[0].Action != activitylog.ActivityClean || tasks[0].Spec != activitylog.DefaultCleanSpec {
 		t.Errorf("schedule = %+v", tasks)
 	}
+	fixed, _ := activitylog.New(activitylog.Config{CleanTenants: []string{"platform"}}, db, nil)
+	if tasks := fixed.Schedule(); len(tasks) != 2 || tasks[1].Scope != foundation.Global {
+		t.Errorf("CleanTenants did not add the fixed clean: %+v", tasks)
+	} else {
+		logger := newLogger(t, db, activitylog.Config{})
+		if _, err := logger.Activity(context.Background(), grantOf(t, member("platform"))).CreatedAt(time.Now().AddDate(-2, 0, 0)).Log("old mail"); err != nil {
+			t.Fatal(err)
+		}
+		if err := tasks[1].Run(context.Background(), security.Grant{}); err != nil {
+			t.Fatal(err)
+		}
+		if left := entries(t, newService(t, db, activitylog.Config{}), "platform", activitylog.Filter{}); len(left) != 0 {
+			t.Errorf("the fixed clean left %d old entries", len(left))
+		}
+	}
+	if _, err := activitylog.New(activitylog.Config{CleanTenants: []string{"Bad Tenant"}}, db, nil); err == nil {
+		t.Error("an invalid clean tenant was accepted")
+	}
 	none, _ := activitylog.New(activitylog.Config{CleanSpec: "-"}, db, nil)
 	if len(none.Schedule()) != 0 {
 		t.Error("CleanSpec \"-\" still scheduled a clean")

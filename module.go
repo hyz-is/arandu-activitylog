@@ -235,12 +235,13 @@ func (c Collection) ToArray() map[string]any {
 func (c Collection) With() map[string]any { return nil }
 
 // Schedule declares the daily clean, per tenant, under the clean action:
-// Spatie's scheduled activitylog:clean. CleanSpec "-" declares none.
+// Spatie's scheduled activitylog:clean. CleanSpec "-" declares none. The
+// tenants in CleanTenants are cleaned by a second task, once each.
 func (m *Module) Schedule() []foundation.Task {
 	if m.cfg.CleanSpec == "-" {
 		return nil
 	}
-	return []foundation.Task{{
+	tasks := []foundation.Task{{
 		ID:        "activitylog.clean",
 		Spec:      m.cfg.CleanSpec,
 		Scope:     foundation.PerTenant,
@@ -252,6 +253,28 @@ func (m *Module) Schedule() []foundation.Task {
 			return err
 		},
 	}}
+	if len(m.cfg.CleanTenants) > 0 {
+		tenants := append([]string(nil), m.cfg.CleanTenants...)
+		tasks = append(tasks, foundation.Task{
+			ID:        "activitylog.clean.fixed",
+			Spec:      m.cfg.CleanSpec,
+			Scope:     foundation.Global,
+			Timeout:   10 * time.Minute,
+			Singleton: true,
+			Action:    ActivityClean,
+			Run: func(ctx context.Context, _ security.Grant) error {
+				for _, tenant := range tenants {
+					//arandu:system-grant the application named this tenant in Config.CleanTenants; the clean removes only its old entries.
+					g := security.SystemGrant(ActivityClean, tenant)
+					if _, err := m.svc.clean(ctx, g, 0, "", time.Now()); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+		})
+	}
+	return tasks
 }
 
 // Migrations declares the schema this module owns.

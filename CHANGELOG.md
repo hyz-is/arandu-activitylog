@@ -27,7 +27,7 @@ a release is corrected by another release and never by moving a tag.
   `UseLogName`, `SetDescriptionForEvent`, `UseAttributeRawValues`) and by the
   record's own `ActivityEvents`, `BeforeActivityLogged` and
   `ActivityLoggingDisabled`.
-- `Config.BeforeLogging`, `Config.TransformChanges`, `Config.ResolveCauser`,
+- `Config.BeforeLogging`, `Config.TransformChanges`, `Config.ResolveCauser`, `Config.CleanTenants`,
   `Config.DefaultExceptAttributes`, `WithoutLogging`, `WithCauser` and
   `Logger.Buffered`.
 - `EventRecorder`, an `events.Publisher` that writes every committed domain

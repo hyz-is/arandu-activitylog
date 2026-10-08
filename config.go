@@ -55,6 +55,11 @@ type Config struct {
 	// on. Empty means DefaultCleanSpec; "-" schedules no clean.
 	CleanSpec string
 
+	// CleanTenants are tenants the scheduled clean also reaches, beside the
+	// ones the scheduler lists for per-tenant work: the application's own
+	// tenant, where the mail log lives, is usually one.
+	CleanTenants []string
+
 	// DefaultExceptAttributes are never logged from any record, whatever its
 	// options say: the place for a password hash, a token, a secret.
 	DefaultExceptAttributes []string
@@ -98,6 +103,11 @@ type Config struct {
 func (c Config) Validate() error {
 	if c.Tenant != "" && !security.ValidTenant(c.Tenant) {
 		return fmt.Errorf("activitylog: Config.Tenant is %q, which cannot be a tenant: lowercase letters, digits, - and _, up to 64 characters", c.Tenant)
+	}
+	for _, tenant := range c.CleanTenants {
+		if !security.ValidTenant(tenant) {
+			return fmt.Errorf("activitylog: Config.CleanTenants holds %q, which cannot be a tenant", tenant)
+		}
 	}
 	if c.CleanAfterDays < 0 {
 		return fmt.Errorf("activitylog: Config.CleanAfterDays is %d, and has to be zero, for %d, or more", c.CleanAfterDays, DefaultCleanAfterDays)
