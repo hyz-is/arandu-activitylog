@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -130,6 +131,9 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 	}
 }
 
+// assignsTenant is an assignment to a TenantID, not a comparison with one.
+var assignsTenant = regexp.MustCompile(`TenantID\s*=[^=]`)
+
 // No tenant is read out of the request: the read routes take their subject
 // from the session, and every write takes its tenant from the Grant.
 func TestNoTenantIsReadOutOfTheRequest(t *testing.T) {
@@ -149,7 +153,7 @@ func TestNoTenantIsReadOutOfTheRequest(t *testing.T) {
 			}
 			return true
 		})
-		if strings.Contains(source.text, "TenantID =") {
+		if assignsTenant.MatchString(source.text) {
 			t.Errorf("%s writes a tenant by hand; the model stamps it from the Grant", source.path)
 		}
 	}

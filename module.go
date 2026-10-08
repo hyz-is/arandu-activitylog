@@ -12,6 +12,7 @@
 //	policy.go   -> who may read and clean
 //	service.go  -> reading and cleaning, after the policy
 //	commands.go -> what an operator runs from a terminal
+//	bridges.go  -> the domain events and the mail an application already has
 //
 // # What is Spatie's, and what is Arandu's
 //

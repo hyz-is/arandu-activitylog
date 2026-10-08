@@ -23,7 +23,7 @@ activity, err := activitylog.New(activitylog.Config{
 if err != nil {
 	return err
 }
-app.Register(activity) // the table, the read routes and the daily clean
+kernel.Register(activity) // the table, the read routes and the daily clean
 
 commands, _ := activitylog.Commands(activitylog.Deps{
 	Service:  activity.Service(),
@@ -93,6 +93,26 @@ Spatie hooks Eloquent's events. A Hesape model event hands a callback the row,
 but not the context or the Grant of the write, so a hook could not write the
 entry in the same transaction and tenant without hidden state. Saving through
 the logger is that hook, written where it can be read.
+
+## Everything the application already records
+
+Two bridges log what an Arandu application already does, with no change to the
+code that does it:
+
+```go
+// Every committed domain event of the outbox, as an entry of its tenant: its
+// name, its aggregate, who authorized it, when. Delivered at least once,
+// recorded once.
+// recorder is an events.Publisher: hand it to the relay, alone or beside the
+// application's other publishers.
+recorder := activitylog.NewEventRecorder(activity.Logger())
+relay := events.NewRelay(events.NewOutbox(db), recorder, events.RelayOptions{Locker: locker})
+
+// Every message the mailer sends, sent or refused, in the "mail" log of the
+// application's own tenant.
+transport, _ := activitylog.NewMailTransport(mailTransport(cfg.Mail), activity.Logger(), cfg.Auth.Tenant)
+mailer := mail.New(transport, renderer, from)
+```
 
 ## Reading and cleaning
 

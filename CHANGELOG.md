@@ -30,6 +30,10 @@ a release is corrected by another release and never by moving a tag.
 - `Config.BeforeLogging`, `Config.TransformChanges`, `Config.ResolveCauser`,
   `Config.DefaultExceptAttributes`, `WithoutLogging`, `WithCauser` and
   `Logger.Buffered`.
+- `EventRecorder`, an `events.Publisher` that writes every committed domain
+  event of the outbox as an entry of its tenant, once however often it is
+  delivered, and `MailTransport`, which writes every message a mailer sends,
+  sent or refused, into the `mail` log.
 - `ActivityService` to read the log by Spatie's scopes and to clean it, behind
   `ActivityPolicy`, which denies everything until the application passes its
   own; the read routes; the `activitylog:clean` command; and a daily clean per
