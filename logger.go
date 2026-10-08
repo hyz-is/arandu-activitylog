@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -47,16 +48,25 @@ func (l *Logger) Enabled(ctx context.Context) bool {
 // Activity starts an entry in the default log, recorded under g: Spatie's
 // activity(). Nothing is written until Log.
 func (l *Logger) Activity(ctx context.Context, g security.Grant) *PendingActivity {
-	return &PendingActivity{logger: l, ctx: ctx, grant: g, logName: l.cfg.DefaultLogName}
+	p := &PendingActivity{logger: l, ctx: ctx, grant: g}
+	p.reset()
+	return p
 }
 
-// In starts an entry in the named log: Spatie's activity('name').
+// In starts an entry in the named log: Spatie's activity('name'). An empty
+// name is the default log, as a falsy name is in Spatie.
 func (l *Logger) In(ctx context.Context, g security.Grant, logName string) *PendingActivity {
-	return l.Activity(ctx, g).InLog(logName)
+	p := l.Activity(ctx, g)
+	if logName != "" {
+		p.InLog(logName)
+	}
+	return p
 }
 
-// PendingActivity is an entry being described. Every method returns it, so a
-// description reads as one chain ending in Log.
+// PendingActivity is an entry being described: Spatie's PendingActivityLog.
+// Every method writes into the entry at once and returns the chain, so a tap
+// sees what the chain set before it, and a method after a tap overrides it,
+// as in Spatie. Log writes it and starts a fresh one.
 //
 // It is not safe for concurrent use; it is meant to live for one chain.
 type PendingActivity struct {
@@ -64,25 +74,34 @@ type PendingActivity struct {
 	ctx    context.Context
 	grant  security.Grant
 
-	logName    string
-	event      string
-	subject    Ref
+	activity   *Activity
 	subjectRec Record
-	causer     Ref
 	causerRec  Record
-	causerSet  bool
-	properties map[string]any
-	changes    Changes
-	createdAt  time.Time
-	taps       []func(a *Activity, event string)
+	err        error
 }
 
-// InLog puts the entry in the named log. An empty name keeps the default.
-// UseLog is the same method under Spatie's other name.
-func (p *PendingActivity) InLog(logName string) *PendingActivity {
-	if logName != "" {
-		p.logName = logName
+// reset starts a fresh entry: the default log, no change, no property, and the
+// causer the context or the Grant names -- Spatie's getActivity.
+func (p *PendingActivity) reset() {
+	activity, err := Activities(p.logger.db).New()
+	if err != nil {
+		p.err = err
+		activity = &Activity{}
 	}
+	activity.LogName = optional(p.logger.cfg.DefaultLogName)
+	causer := p.defaultCauser()
+	activity.CauserType, activity.CauserID = optional(causer.Type), optional(causer.ID)
+	p.activity, p.subjectRec, p.causerRec = activity, nil, nil
+}
+
+// Entry is the entry being described, for what the chain has no method for.
+func (p *PendingActivity) Entry() *Activity { return p.activity }
+
+// InLog puts the entry in the named log; an empty name leaves the entry with
+// no log, as Spatie's useLog(null). UseLog is the same method under Spatie's
+// other name.
+func (p *PendingActivity) InLog(logName string) *PendingActivity {
+	p.activity.LogName = optional(logName)
 	return p
 }
 
@@ -96,7 +115,9 @@ func (p *PendingActivity) On(record Record) *PendingActivity {
 	if record == nil {
 		return p
 	}
-	p.subject, p.subjectRec = refOf(record), record
+	ref := RefOf(record)
+	p.activity.SubjectType, p.activity.SubjectID = optional(ref.Type), optional(ref.ID)
+	p.subjectRec = record
 	return p
 }
 
@@ -106,19 +127,22 @@ func (p *PendingActivity) PerformedOn(record Record) *PendingActivity { return p
 // OnRef says what the entry is about by reference, for a thing that is not a
 // row of this database.
 func (p *PendingActivity) OnRef(ref Ref) *PendingActivity {
-	p.subject, p.subjectRec = ref, nil
+	p.activity.SubjectType, p.activity.SubjectID = optional(ref.Type), optional(ref.ID)
+	p.subjectRec = nil
 	return p
 }
 
 // By says who caused the entry: a record, whose kind and key become the causer
-// and whose attributes the :causer placeholders read. It wins over the Grant's
-// subject and over a default causer the context carries. CausedBy is the same
-// method under Spatie's other name.
+// and whose attributes the :causer placeholders read. A nil record changes
+// nothing, as causedBy(null) does in Spatie. CausedBy is the same method under
+// Spatie's other name.
 func (p *PendingActivity) By(record Record) *PendingActivity {
 	if record == nil {
 		return p
 	}
-	p.causer, p.causerRec, p.causerSet = refOf(record), record, true
+	ref := RefOf(record)
+	p.activity.CauserType, p.activity.CauserID = optional(ref.Type), optional(ref.ID)
+	p.causerRec = record
 	return p
 }
 
@@ -127,81 +151,100 @@ func (p *PendingActivity) CausedBy(record Record) *PendingActivity { return p.By
 
 // ByRef says who caused the entry by reference.
 func (p *PendingActivity) ByRef(ref Ref) *PendingActivity {
-	p.causer, p.causerRec, p.causerSet = ref, nil, true
+	p.activity.CauserType, p.activity.CauserID = optional(ref.Type), optional(ref.ID)
+	p.causerRec = nil
 	return p
 }
 
 // ByAnonymous records the entry with no causer, whoever holds the Grant.
 // CausedByAnonymous is the same method under Spatie's other name.
 func (p *PendingActivity) ByAnonymous() *PendingActivity {
-	p.causer, p.causerRec, p.causerSet = Ref{}, nil, true
+	p.activity.CauserType, p.activity.CauserID = nil, nil
+	p.causerRec = nil
 	return p
 }
 
 // CausedByAnonymous is ByAnonymous.
 func (p *PendingActivity) CausedByAnonymous() *PendingActivity { return p.ByAnonymous() }
 
-// Event names the kind of change the entry records.
+// Event names the kind of change the entry records. SetEvent is the same
+// method under Spatie's other name.
 func (p *PendingActivity) Event(event string) *PendingActivity {
-	p.event = event
+	p.activity.Event = optional(event)
 	return p
 }
 
+// SetEvent is Event.
+func (p *PendingActivity) SetEvent(event string) *PendingActivity { return p.Event(event) }
+
 // WithProperties replaces what the entry carries.
 func (p *PendingActivity) WithProperties(properties map[string]any) *PendingActivity {
-	p.properties = make(map[string]any, len(properties))
-	for key, value := range properties {
-		p.properties[key] = value
+	if err := p.activity.SetProperties(properties); err != nil && p.err == nil {
+		p.err = err
 	}
 	return p
 }
 
 // WithProperty adds one property to what the entry carries.
 func (p *PendingActivity) WithProperty(key string, value any) *PendingActivity {
-	if p.properties == nil {
-		p.properties = map[string]any{}
+	if err := p.activity.SetProperty(key, value); err != nil && p.err == nil {
+		p.err = err
 	}
-	p.properties[key] = value
 	return p
 }
 
 // WithChanges sets the record's change the entry carries.
 func (p *PendingActivity) WithChanges(changes Changes) *PendingActivity {
-	p.changes = changes
+	if err := p.activity.SetChanges(Changes{Attributes: changes.Attributes, Old: changes.Old}); err != nil && p.err == nil {
+		p.err = err
+	}
 	return p
 }
 
 // CreatedAt dates the entry; the default is now.
 func (p *PendingActivity) CreatedAt(at time.Time) *PendingActivity {
-	p.createdAt = at
+	p.activity.CreatedAt = at.UTC()
 	return p
 }
 
-// Tap runs fn on the entry right before it is written, with its event -- the
-// place to set anything the chain has no method for.
+// Tap runs fn on the entry now, with the chain's event -- the place to set
+// anything the chain has no method for. As in Spatie, a method called after
+// the tap overrides what the tap set.
 func (p *PendingActivity) Tap(fn func(a *Activity, event string)) *PendingActivity {
 	if fn != nil {
-		p.taps = append(p.taps, fn)
+		fn(p.activity, text(p.activity.Event))
 	}
 	return p
 }
 
-// When applies fn to the chain when condition holds -- Spatie's Conditionable.
-func (p *PendingActivity) When(condition bool, fn func(*PendingActivity) *PendingActivity) *PendingActivity {
-	if condition && fn != nil {
-		return fn(p)
+// When applies fn to the chain when condition holds, and otherwise the
+// optional default -- Spatie's Conditionable.
+func (p *PendingActivity) When(condition bool, fn func(*PendingActivity) *PendingActivity, otherwise ...func(*PendingActivity) *PendingActivity) *PendingActivity {
+	if condition {
+		if fn != nil {
+			return fn(p)
+		}
+		return p
+	}
+	for _, fallback := range otherwise {
+		if fallback != nil {
+			return fallback(p)
+		}
 	}
 	return p
 }
 
-// Unless applies fn to the chain when condition does not hold.
-func (p *PendingActivity) Unless(condition bool, fn func(*PendingActivity) *PendingActivity) *PendingActivity {
-	return p.When(!condition, fn)
+// Unless applies fn to the chain when condition does not hold, and otherwise
+// the optional default.
+func (p *PendingActivity) Unless(condition bool, fn func(*PendingActivity) *PendingActivity, otherwise ...func(*PendingActivity) *PendingActivity) *PendingActivity {
+	return p.When(!condition, fn, otherwise...)
 }
 
-// Log writes the entry, described by description once its placeholders are
-// replaced, and answers it. While logging is off -- by configuration or by
-// WithoutLogging -- nothing is written and the answer is nil with no error.
+// Log writes the entry and answers it. Its description is one a tap already
+// set or else description, with its placeholders replaced. While logging is
+// off -- by configuration or by WithoutLogging -- nothing is written, the
+// answer is nil with no error, and the entry being described is kept, as in
+// Spatie.
 //
 // Inside a context made by Buffered the entry is kept and written when the
 // buffer is flushed; its identifier is already set.
@@ -210,51 +253,45 @@ func (p *PendingActivity) Log(description string) (*Activity, error) {
 	if !l.Enabled(p.ctx) {
 		return nil, nil
 	}
+	if p.err != nil {
+		err := p.err
+		p.err = nil
+		p.reset()
+		return nil, err
+	}
 	if security.Tenant(p.grant) == "" {
 		return nil, ErrNoGrant
 	}
-	activity, err := Activities(l.db).New()
-	if err != nil {
-		return nil, err
-	}
-	if activity.ID, err = database.NewOrderedID(); err != nil {
-		return nil, err
-	}
-	activity.LogName = optional(p.logName)
-	activity.Event = optional(p.event)
-	activity.SubjectType, activity.SubjectID = optional(p.subject.Type), optional(p.subject.ID)
-	causer := p.resolveCauser()
-	activity.CauserType, activity.CauserID = optional(causer.Type), optional(causer.ID)
-	if err := activity.SetProperties(p.properties); err != nil {
-		return nil, err
-	}
-	if err := activity.SetChanges(Changes{Attributes: normalizeMap(p.changes.Attributes), Old: normalizeMap(p.changes.Old)}); err != nil {
-		return nil, err
+	activity := p.activity
+	if activity.ID == "" {
+		id, err := database.NewOrderedID()
+		if err != nil {
+			return nil, err
+		}
+		activity.ID = id
 	}
 	now := time.Now().UTC()
-	activity.CreatedAt, activity.UpdatedAt = now, now
-	if !p.createdAt.IsZero() {
-		activity.CreatedAt = p.createdAt.UTC()
+	if activity.CreatedAt.IsZero() {
+		activity.CreatedAt = now
 	}
-	for _, tap := range p.taps {
-		tap(activity, p.event)
-	}
-	// A description a tap already set wins over the one Log was given, as it
-	// does in Spatie.
+	activity.UpdatedAt = now
 	if activity.Description == "" {
-		activity.Description = p.replacePlaceholders(description, activity)
+		activity.Description = description
 	}
-	if activity.AttributeChanges != nil && l.cfg.TransformChanges != nil {
+	activity.Description = p.replacePlaceholders(activity.Description, activity)
+	if l.cfg.TransformChanges != nil {
 		l.cfg.TransformChanges(activity)
 	}
 	if hook, ok := p.subjectRec.(BeforeActivityLogged); ok {
-		hook.BeforeActivityLogged(activity, p.event)
+		hook.BeforeActivityLogged(activity, text(activity.Event))
 	}
 	for _, before := range l.cfg.BeforeLogging {
 		if err := before(p.ctx, activity); err != nil {
+			p.reset()
 			return nil, err
 		}
 	}
+	p.reset()
 	if buffer := bufferOf(p.ctx); buffer != nil {
 		buffer.add(p.grant, activity)
 		return activity, nil
@@ -265,13 +302,10 @@ func (p *PendingActivity) Log(description string) (*Activity, error) {
 	return activity, nil
 }
 
-// resolveCauser answers who caused the entry: the one the chain named, else
-// the default the context carries, else the configured resolver, else the
-// Grant's subject when it is somebody.
-func (p *PendingActivity) resolveCauser() Ref {
-	if p.causerSet {
-		return p.causer
-	}
+// defaultCauser answers who caused an entry that names nobody: the default the
+// context carries, else the configured resolver, else the Grant's subject when
+// it is somebody -- Spatie's CauserResolver.
+func (p *PendingActivity) defaultCauser() Ref {
 	if ref, ok := defaultCauser(p.ctx); ok {
 		return ref
 	}
@@ -290,8 +324,10 @@ func (p *PendingActivity) resolveCauser() Ref {
 var placeholder = regexp.MustCompile(`(?i):[a-z0-9._-]+`)
 
 // replacePlaceholders replaces :subject.x, :causer.x and :properties.x with
-// what they name. A token whose base is anything else, or whose path leads
-// nowhere, is left as written.
+// what they name. The base is matched exactly, as Spatie's in_array does. A
+// token whose base is anything else, whose base is absent -- an anonymous
+// causer, an entry about nothing -- or whose path leads nowhere is left as
+// written.
 func (p *PendingActivity) replacePlaceholders(description string, activity *Activity) string {
 	return placeholder.ReplaceAllStringFunc(description, func(token string) string {
 		trailing := ""
@@ -300,16 +336,11 @@ func (p *PendingActivity) replacePlaceholders(description string, activity *Acti
 		}
 		base, path, _ := strings.Cut(token[1:], ".")
 		var values map[string]any
-		switch strings.ToLower(base) {
+		switch base {
 		case "subject":
-			values = recordValues(p.subjectRec, p.subject)
+			values = recordValues(p.subjectRec, activity.Subject())
 		case "causer":
-			causer := activity.Causer()
-			if p.causerRec != nil {
-				values = recordValues(p.causerRec, causer)
-			} else {
-				values = map[string]any{"id": causer.ID, "type": causer.Type}
-			}
+			values = recordValues(p.causerRec, activity.Causer())
 		case "properties":
 			values = activity.Properties()
 		default:
@@ -319,6 +350,10 @@ func (p *PendingActivity) replacePlaceholders(description string, activity *Acti
 			return token + trailing
 		}
 		value, ok := lookup(values, path)
+		if !ok && base != "properties" {
+			// A loaded relation of the subject or the causer: :subject.author.name.
+			value, ok = relationPath(values, path)
+		}
 		if !ok || value == nil {
 			return token + trailing
 		}
@@ -326,8 +361,9 @@ func (p *PendingActivity) replacePlaceholders(description string, activity *Acti
 	})
 }
 
-// recordValues is what a placeholder can read from a record: its attributes,
-// and its kind and key under "type" and "id" when it has no column so named.
+// recordValues is what a placeholder can read: a record's array, with its kind
+// and key under "type" and "id" when it has no column so named; a reference's
+// kind and key; nothing for the zero reference.
 func recordValues(record Record, ref Ref) map[string]any {
 	if record == nil {
 		if ref.IsZero() {
@@ -423,8 +459,9 @@ func (b *Buffer) Len() int {
 }
 
 // Flush writes every waiting entry in one transaction, each under the Grant it
-// was recorded with, and empties the buffer. ctx should not be the buffered
-// context: the writes are the flush's own.
+// was recorded with, and empties the buffer. When the write fails, the entries
+// are kept for the next flush, as Spatie's buffer keeps them. ctx should not
+// be the buffered context: the writes are the flush's own.
 func (b *Buffer) Flush(ctx context.Context) error {
 	b.mu.Lock()
 	entries := b.entries
@@ -433,7 +470,7 @@ func (b *Buffer) Flush(ctx context.Context) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	return data.Transaction(ctx, b.logger.db, func(ctx context.Context) error {
+	err := data.Transaction(ctx, b.logger.db, func(ctx context.Context) error {
 		for _, entry := range entries {
 			if _, err := entry.activity.Save(ctx, entry.grant); err != nil {
 				return fmt.Errorf("activitylog: flushing the buffer: %w", err)
@@ -441,4 +478,37 @@ func (b *Buffer) Flush(ctx context.Context) error {
 		}
 		return nil
 	})
+	if err != nil {
+		b.mu.Lock()
+		b.entries = append(entries, b.entries...)
+		b.mu.Unlock()
+	}
+	return err
+}
+
+// WithBuffer runs fn under a buffered context and flushes what it recorded
+// when fn returns, whether or not it failed -- Spatie's flush after a job,
+// processed or failed. The flush's error is answered when fn's is nil.
+func (l *Logger) WithBuffer(ctx context.Context, fn func(ctx context.Context) error) error {
+	buffered, buffer := l.Buffered(ctx)
+	err := fn(buffered)
+	if flushErr := buffer.Flush(context.WithoutCancel(ctx)); err == nil {
+		err = flushErr
+	}
+	return err
+}
+
+// BufferRequests is a middleware that buffers what each request records and
+// flushes it once the response is written -- Spatie's flush on terminate. A
+// failed flush is reported to onError, which may be nil.
+func (l *Logger) BufferRequests(onError func(r *http.Request, err error)) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			buffered, buffer := l.Buffered(r.Context())
+			next.ServeHTTP(w, r.WithContext(buffered))
+			if err := buffer.Flush(context.WithoutCancel(r.Context())); err != nil && onError != nil {
+				onError(r, err)
+			}
+		})
+	}
 }

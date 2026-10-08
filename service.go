@@ -147,11 +147,23 @@ func (s *ActivityService) Paginate(ctx context.Context, actor security.Subject, 
 		page = pages
 	}
 	items, err := filtered(Activities(s.db), filter).OrderByDesc("created_at").OrderByDesc("id").
-		Offset((page - 1) * perPage).Limit(perPage).Get(ctx, g)
+		Offset((page-1)*perPage).Limit(perPage).Get(ctx, g)
 	if err != nil {
 		return Page{}, err
 	}
 	return Page{Items: items, Page: page, Pages: pages, Total: int(total)}, nil
+}
+
+// ForSubject pages through the entries about a record, newest first --
+// Spatie's activitiesAsSubject.
+func (s *ActivityService) ForSubject(ctx context.Context, actor security.Subject, record Record, q data.Query) ([]*Activity, error) {
+	return s.List(ctx, actor, Filter{Subject: RefOf(record)}, q)
+}
+
+// CausedBy pages through the entries a record caused, newest first --
+// Spatie's activitiesAsCauser.
+func (s *ActivityService) CausedBy(ctx context.Context, actor security.Subject, record Record, q data.Query) ([]*Activity, error) {
+	return s.List(ctx, actor, Filter{Causer: RefOf(record)}, q)
 }
 
 // Count is how many entries a filter keeps.

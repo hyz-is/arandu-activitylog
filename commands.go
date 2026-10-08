@@ -65,13 +65,14 @@ func cleanCommand(deps Deps) console.Command {
 				return console.Exit(1, "the operator for %q belongs to %q", tenant, actor.Tenant)
 			}
 			days := 0
-			if raw := strings.TrimSpace(o.Option("days").String()); raw != "" {
-				parsed, err := strconv.Atoi(raw)
+			if option := o.Option("days"); option.Present() {
+				parsed, err := strconv.Atoi(strings.TrimSpace(option.String()))
 				if err != nil || parsed < 1 {
 					return console.Exit(1, "The days option must be a positive integer.")
 				}
 				days = parsed
 			}
+			o.Comment("Cleaning activity log...")
 			logName := o.Argument("log").String()
 			if !o.Option("force").Bool() {
 				filter := Filter{Until: cutoffFor(deps.Service, days)}
@@ -90,6 +91,7 @@ func cleanCommand(deps Deps) console.Command {
 				return fail(err)
 			}
 			o.Info("Deleted %d record(s) from the activity log.", deleted)
+			o.Comment("All done!")
 			return nil
 		},
 	}

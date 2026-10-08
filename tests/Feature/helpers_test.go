@@ -27,6 +27,7 @@ type article struct {
 	Body      string     `db:"body"`
 	Secret    string     `db:"secret"`
 	Meta      string     `db:"meta"`
+	AuthorID  string     `db:"author_id"`
 	CreatedAt time.Time  `db:"created_at"`
 	UpdatedAt time.Time  `db:"updated_at"`
 	DeletedAt *time.Time `db:"deleted_at"`
@@ -81,6 +82,12 @@ var authorTable = model.NewTable(model.TableSpec{
 	NoTimestamps: true,
 })
 
+func init() {
+	articleTable.Relate("author", func(m *model.Model) model.Relation {
+		return model.BelongsTo(m, authorTable, "author_id", "id", "author")
+	})
+}
+
 func (a *author) ActivityType() string { return "author" }
 
 // openPolicy allows everything, so the tests reach the rows; the tenant filter
@@ -130,6 +137,7 @@ func openDatabase(t *testing.T) *data.DB {
 		table.Text("body")
 		table.String("secret")
 		table.Text("meta")
+		table.String("author_id").Default("")
 		table.Timestamp("created_at")
 		table.Timestamp("updated_at")
 		table.Timestamp("deleted_at").Nullable()

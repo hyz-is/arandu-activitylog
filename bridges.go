@@ -96,8 +96,6 @@ func (r *EventRecorder) Publish(ctx context.Context, e events.Stored) error {
 		id := e.ID
 		chain = chain.Tap(func(a *Activity, _ string) { a.ID = id })
 	}
-	// The description is the event's own text, not a template.
-	chain = chain.Tap(func(a *Activity, _ string) { a.Description = description })
 	_, err := chain.Log(description)
 	return err
 }
@@ -148,7 +146,7 @@ func (t *MailTransport) Send(ctx context.Context, m mail.Message) error {
 		"subject":   m.Subject,
 		"tags":      m.Tags,
 		"transport": t.next.Name(),
-	}).Tap(func(a *Activity, _ string) { a.Description = description })
+	})
 	if sendErr != nil {
 		chain = chain.WithProperty("error", sendErr.Error())
 	}

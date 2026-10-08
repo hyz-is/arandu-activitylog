@@ -115,6 +115,13 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 			}
 			checked++
 			authorize := firstCall(function.Body, "Authorize")
+			// A method that hands the whole call to another method that
+			// authorizes is held by that method's check.
+			for _, delegate := range []string{"List", "Paginate", "Find"} {
+				if authorize == token.NoPos && function.Name.Name != delegate {
+					authorize = firstCall(function.Body, delegate)
+				}
+			}
 			if authorize == token.NoPos {
 				t.Errorf("ActivityService.%s never calls security.Authorize", function.Name.Name)
 				continue

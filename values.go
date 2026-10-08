@@ -7,11 +7,14 @@ import (
 	"time"
 )
 
+// DateFormat is how a time is written in an entry: Laravel's serializeDate.
+const DateFormat = "2006-01-02T15:04:05.000000Z"
+
 // normalizeValue turns what a record holds into what JSON keeps the same way
 // on every engine.
 //
-// A time is written in UTC as RFC 3339, which is what Spatie's serializeDate
-// writes. A value that knows how it is stored -- an enum, a nullable column --
+// A time is written in UTC as Laravel's serializeDate writes it,
+// 2006-01-02T15:04:05.000000Z. A value that knows how it is stored -- an enum, a nullable column --
 // is written as stored. Bytes are text. Anything else is left to encoding/json.
 func normalizeValue(value any) any {
 	switch v := value.(type) {
@@ -21,12 +24,12 @@ func normalizeValue(value any) any {
 		if v.IsZero() {
 			return nil
 		}
-		return v.UTC().Format(time.RFC3339Nano)
+		return v.UTC().Format(DateFormat)
 	case *time.Time:
 		if v == nil || v.IsZero() {
 			return nil
 		}
-		return v.UTC().Format(time.RFC3339Nano)
+		return v.UTC().Format(DateFormat)
 	case []byte:
 		return string(v)
 	case json.RawMessage:

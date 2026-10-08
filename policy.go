@@ -16,6 +16,31 @@ const (
 	ActivityClean security.Action = "activity.clean"
 )
 
+// Actions are the actions this package's policy answers about, for an
+// application to declare beside its own -- in arandu-permission's catalogue,
+// so an organization grants reading or cleaning its log to whom it decides,
+// as permission.Actions() is declared.
+func Actions() []security.Action { return []security.Action{ActivityView, ActivityClean} }
+
+// PermissionPolicy decides by the subject's own actions, which
+// arandu-permission fills: it allows an action the subject was granted, on an
+// entry of the subject's tenant. It is the policy for an application that
+// administers its permissions there.
+type PermissionPolicy struct{}
+
+var _ security.Policy[Activity] = PermissionPolicy{}
+
+// Can allows a granted action on an entry of the subject's tenant.
+func (PermissionPolicy) Can(_ context.Context, s security.Subject, a security.Action, record Activity) error {
+	if record.ID != "" && record.TenantID != s.Tenant {
+		return fmt.Errorf("activity belongs to another tenant")
+	}
+	if s.Can(a) {
+		return nil
+	}
+	return fmt.Errorf("the subject was not granted %s", a)
+}
+
 // ActivityPolicy is the policy this package ships, and it denies everything.
 //
 // An application opens the log by passing its own policy in Config.Policy,
