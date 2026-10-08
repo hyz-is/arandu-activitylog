@@ -10,6 +10,49 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-08
+
+### Added
+
+- Screens: the log and one entry, with what each is about and who caused
+  it, and what changed before and after. `Config.Screens` draws them for the
+  read routes, `Publishes` hands their sources to `aru vendor:publish`, and
+  `Boot` refuses to start without them compiled. `Config.Locale` ("en",
+  "pt-BR") and `Config.Name`, which names subjects and causers.
+- `Actions()`, for an application to declare the log's actions in
+  arandu-permission's catalogue, and `PermissionPolicy`, which decides by
+  the subject's granted actions within its tenant.
+- `Logger.ForceDelete`, logged as deleted. `RefOf`, `ActivityService.ForSubject`
+  and `ActivityService.CausedBy`. `DoesNotRecordEvents`. `PendingActivity.Entry`
+  and `SetEvent`. `When` and `Unless` take a default branch.
+- `Logger.WithBuffer` and `Logger.BufferRequests`, which flush what a job or a
+  request buffered once it ends.
+
+### Changed
+
+- **Breaking.** A pending entry is Spatie's: every method writes into it at
+  once, a tap runs immediately and a method after it overrides it, and a
+  description a tap set has its placeholders replaced too. `InLog("")` leaves
+  the entry with no log, as `useLog(null)`; `In` with an empty name keeps the
+  default.
+- **Breaking.** `LogOnly`, `LogExcept`, `DontLogIfAttributesChangedOnly` and
+  `UseAttributeRawValues` replace what was named before, as Spatie's do.
+  `Record` requires `Fresh`, which every Hesape model has.
+- A record's change is read from the row as stored, before and after the
+  write, with the relations its options name: a relation path ("author.name")
+  is logged before and after, and an unchanged value is no longer reported
+  as changed because of the precision it was kept in.
+- A name the record does not hold, and a JSON path that leads nowhere, are
+  logged as null. Times are written as Laravel writes them
+  (`2006-01-02T15:04:05.000000Z`). Clearing deleted_at through Save is not
+  logged as an update. `DontLogIfAttributesChangedOnly` holds a creation back
+  too. `TransformChanges` runs on every entry.
+- Placeholders match their base exactly, keep their token for an absent
+  causer, and read the loaded relations of the subject and the causer.
+- A failed `Buffer.Flush` keeps its entries for the next one.
+- `activitylog:clean` says "Cleaning activity log..." and "All done!", and
+  refuses an empty `--days`.
+
 ## [0.1.0] - 2026-10-08
 
 ### Added

@@ -70,7 +70,18 @@ var (
 	_ foundation.Module      = (*Module)(nil)
 	_ foundation.Migratable  = (*Module)(nil)
 	_ foundation.Schedulable = (*Module)(nil)
+	_ foundation.Bootable    = (*Module)(nil)
 )
+
+// Boot refuses to start an application that asked for the screens and did not
+// publish and compile them: one refusal at start-up that names the views and
+// the command, rather than an error on the first page somebody opened.
+func (m *Module) Boot(context.Context) error {
+	if !m.cfg.Screens || m.sessions == nil {
+		return nil
+	}
+	return checkViews()
+}
 
 // New returns the module, or the reason it cannot be built. sessions is where
 // the read routes take their subject from; it may be nil for an application
@@ -128,6 +139,9 @@ func (m *Module) index(ctx *fhttp.Context) error {
 	if names := strings.TrimSpace(ctx.Query("log")); names != "" {
 		filter.LogNames = strings.Split(names, ",")
 	}
+	if m.cfg.Screens && !ctx.WantsJSON() {
+		return m.indexPage(ctx, filter)
+	}
 	records, err := m.svc.List(ctx.Ctx(), m.subject(ctx.Request), filter, data.Query{Cursor: ctx.Query("cursor"), Limit: m.cfg.PageSize})
 	if err != nil {
 		return m.answer(ctx, err)
@@ -143,6 +157,9 @@ func (m *Module) show(ctx *fhttp.Context) error {
 	record, err := m.svc.Find(ctx.Ctx(), m.subject(ctx.Request), ctx.Param("id"))
 	if err != nil {
 		return m.answer(ctx, err)
+	}
+	if m.cfg.Screens && !ctx.WantsJSON() {
+		return m.showPage(ctx, record)
 	}
 	return ctx.JSON(stdhttp.StatusOK, NewResource(record))
 }

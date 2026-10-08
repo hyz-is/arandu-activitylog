@@ -94,6 +94,20 @@ type Config struct {
 	// DefaultPrefix.
 	Prefix string
 
+	// Screens draws the read routes as pages -- the log and one entry -- for
+	// a request that does not ask for JSON. The application publishes and
+	// compiles the views first (see PublishCommand); Boot refuses to start
+	// without them.
+	Screens bool
+
+	// Locale is the language of the screens: "en" or "pt-BR". Empty is "en".
+	Locale string
+
+	// Name names a subject or a causer on the screens -- a user by their name
+	// rather than their identifier. Nil, or an empty answer, shows the kind and
+	// a short identifier.
+	Name func(ctx context.Context, ref Ref) string
+
 	// PageSize is how many entries one page answers with. Zero means
 	// DefaultPageSize, and anything above MaxPageSize is refused.
 	PageSize int

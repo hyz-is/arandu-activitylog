@@ -114,6 +114,27 @@ transport, _ := activitylog.NewMailTransport(mailTransport(cfg.Mail), activity.L
 mailer := mail.New(transport, renderer, from)
 ```
 
+## Permissions
+
+`activitylog.Actions()` are the log's actions; declare them in
+arandu-permission's catalogue beside the application's own, and pass
+`activitylog.PermissionPolicy{}` as `Config.Policy` so an organization grants
+reading or cleaning its log to whom it decides.
+
+## Screens
+
+With `Config.Screens`, the read routes draw the log -- filtered, paged, with
+what each entry is about and who caused it -- and one entry with what changed
+before and after. Publish and compile them, then import the compiled package:
+
+```sh
+aru vendor:publish --apply
+aru view:build
+```
+
+`Config.Locale` picks the words ("en", "pt-BR"), and `Config.Name` names a
+subject or a causer -- a user by their name rather than their identifier.
+
 ## Reading and cleaning
 
 ```go
