@@ -30,6 +30,9 @@ func TestTheShippedPolicyRefusesEveryAction(t *testing.T) {
 	if _, err := svc.Find(ctx, actor, "x"); !errors.Is(err, security.ErrForbidden) {
 		t.Errorf("Find: %v", err)
 	}
+	if _, err := svc.Paginate(ctx, actor, activitylog.Filter{}, 1, 10); !errors.Is(err, security.ErrForbidden) {
+		t.Errorf("Paginate: %v", err)
+	}
 	if _, err := svc.Count(ctx, actor, activitylog.Filter{}); !errors.Is(err, security.ErrForbidden) {
 		t.Errorf("Count: %v", err)
 	}
@@ -91,6 +94,13 @@ func TestTheLogIsReadByItsScopesAndPagedNewestFirst(t *testing.T) {
 		t.Errorf("the newest entry does not come first: %s", *first[0].Event)
 	}
 
+	numbered, err := svc.Paginate(ctx, member("acme"), activitylog.Filter{}, 2, 3)
+	if err != nil || numbered.Total != 4 || numbered.Pages != 2 || numbered.Page != 2 || len(numbered.Items) != 1 || *numbered.Items[0].Event != "created" {
+		t.Errorf("numbered page = %+v (%v)", numbered, err)
+	}
+	if past, _ := svc.Paginate(ctx, member("acme"), activitylog.Filter{}, 9, 3); past.Page != 2 {
+		t.Errorf("a page past the last answered page %d", past.Page)
+	}
 	if _, err := svc.Find(ctx, member("acme"), foreign.ID); !errors.Is(err, activitylog.ErrNotFound) {
 		t.Errorf("another tenant's entry: %v, want ErrNotFound", err)
 	}

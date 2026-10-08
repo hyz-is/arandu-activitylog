@@ -111,6 +111,49 @@ func (s *ActivityService) List(ctx context.Context, actor security.Subject, filt
 	return page.OrderByDesc("created_at").OrderByDesc("id").Limit(limit).Get(ctx, g)
 }
 
+// Page is one numbered page of the log and where it sits among the rest --
+// what a screen with page numbers draws.
+type Page struct {
+	Items              []*Activity
+	Page, Pages, Total int
+}
+
+// Paginate reads one numbered page of the log, newest first: Eloquent's
+// paginate, which Spatie's activity queries end in. A page past the last is
+// the last.
+func (s *ActivityService) Paginate(ctx context.Context, actor security.Subject, filter Filter, page, perPage int) (Page, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, ActivityView, Activity{})
+	if err != nil {
+		return Page{}, err
+	}
+	switch {
+	case perPage <= 0:
+		perPage = defaultLimit
+	case perPage > maxLimit:
+		perPage = maxLimit
+	}
+	total, err := filtered(Activities(s.db), filter).Count(ctx, g)
+	if err != nil {
+		return Page{}, err
+	}
+	pages := int((total + int64(perPage) - 1) / int64(perPage))
+	if pages < 1 {
+		pages = 1
+	}
+	if page < 1 {
+		page = 1
+	}
+	if page > pages {
+		page = pages
+	}
+	items, err := filtered(Activities(s.db), filter).OrderByDesc("created_at").OrderByDesc("id").
+		Offset((page - 1) * perPage).Limit(perPage).Get(ctx, g)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Items: items, Page: page, Pages: pages, Total: int(total)}, nil
+}
+
 // Count is how many entries a filter keeps.
 func (s *ActivityService) Count(ctx context.Context, actor security.Subject, filter Filter) (int64, error) {
 	g, err := security.Authorize(ctx, s.policy, actor, ActivityView, Activity{})
