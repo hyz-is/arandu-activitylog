@@ -10,7 +10,6 @@ import (
 	"time"
 
 	fhttp "github.com/arandu-io/framework/http"
-	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/view"
 )
 
@@ -66,9 +65,11 @@ func (m *Module) showPage(ctx *fhttp.Context, entry *Activity) error {
 	return ctx.View(ViewShow, data)
 }
 
+// page is the chrome of a screen, drawn by view.New: the title, the path, the
+// CSRF token and the application name the framework put on the request, and
+// the navigation of the routes the application registered.
 func (m *Module) page(ctx *fhttp.Context, title string) view.Page {
-	token, _ := hhttp.CSRFTokenFrom(ctx.Ctx())
-	return view.Page{Title: title, Path: ctx.Request.URL.Path, Token: token}
+	return view.New(ctx, title)
 }
 
 // row is one entry as the screens show it.
