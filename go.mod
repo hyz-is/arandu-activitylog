@@ -3,8 +3,8 @@ module github.com/hyz-is/arandu-activitylog
 go 1.26.0
 
 require (
-	github.com/arandu-io/framework v0.55.1
-	github.com/arandu-io/hesape v0.52.0
+	github.com/arandu-io/framework v0.56.0
+	github.com/arandu-io/hesape v0.54.0
 	modernc.org/sqlite v1.57.0
 )
 
