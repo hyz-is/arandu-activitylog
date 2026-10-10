@@ -10,6 +10,25 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-09
+
+### Changed
+
+- Requires Framework v0.56.0 and Hesape v0.54.0. The manifest's framework
+  floor is `>= 0.56`. No symbol, route, migration, action or policy decision
+  changes: `apidiff` against v0.2.2 reports nothing.
+- An application below those releases upgrades them first, following their
+  upgrade guides. From Framework v0.56.0 the configuration bridge no longer
+  reads `SESSION_TTL` and `config.Config.SessionTTL` is gone; an application
+  that boots with `bootstrap.LoadConfiguration` is unaffected.
+
+### Fixed
+
+- The screens draw their chrome with `view.New`, so the log and an entry
+  show the application name the framework puts on the request, and the
+  navigation of the routes the application registered. Before, they drew no
+  brand in the application's layout.
+
 ## [0.2.2] - 2026-10-09
 
 ### Changed
