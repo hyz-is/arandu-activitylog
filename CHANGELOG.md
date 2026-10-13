@@ -10,6 +10,27 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-13
+
+### Added
+
+- An entry recorded while an operator views or acts in somebody's account
+  (hesape `auth.Impersonate` / `auth.ImpersonateActing`) names the operator as
+  its causer, and carries the `impersonation` property (`ImpersonationProperty`):
+  `by` the operator, `on_behalf_of` the account, `mode` `viewing` or `acting`.
+  An explicit causer (`By`, `WithCauser`, `Config.ResolveCauser`) still wins.
+
+### Fixed
+
+- An entry recorded with the Grant of somebody only viewing an account was
+  refused, because that Grant writes nothing: the record that the account was
+  looked at was lost. The entry is now written in the same tenant with a Grant
+  to record only.
+
+### Changed
+
+- Requires hesape v0.56.0.
+
 ## [0.2.3] - 2026-10-09
 
 ### Changed

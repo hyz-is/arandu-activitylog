@@ -278,6 +278,10 @@ func (p *PendingActivity) Log(description string) (*Activity, error) {
 	if activity.Description == "" {
 		activity.Description = description
 	}
+	if err := p.markImpersonation(activity); err != nil {
+		p.reset()
+		return nil, err
+	}
 	activity.Description = p.replacePlaceholders(activity.Description, activity)
 	if l.cfg.TransformChanges != nil {
 		l.cfg.TransformChanges(activity)
@@ -293,13 +297,25 @@ func (p *PendingActivity) Log(description string) (*Activity, error) {
 	}
 	p.reset()
 	if buffer := bufferOf(p.ctx); buffer != nil {
-		buffer.add(p.grant, activity)
+		buffer.add(p.entryGrant(), activity)
 		return activity, nil
 	}
-	if _, err := activity.Save(p.ctx, p.grant); err != nil {
+	if _, err := activity.Save(p.ctx, p.entryGrant()); err != nil {
 		return nil, fmt.Errorf("activitylog: writing the entry: %w", err)
 	}
 	return activity, nil
+}
+
+// entryGrant is the Grant the entry itself is written with: the act's own,
+// except when the act was done by somebody only viewing an account. That
+// Grant writes nothing, and the record that the account was looked at is the
+// system's, not the account's, so it is written in the same tenant with a
+// Grant to record and nothing else.
+func (p *PendingActivity) entryGrant() security.Grant {
+	if p.grant.ReadOnly() {
+		return security.SystemGrant(ActivityRecord, security.Tenant(p.grant))
+	}
+	return p.grant
 }
 
 // defaultCauser answers who caused an entry that names nobody: the default the
@@ -312,11 +328,38 @@ func (p *PendingActivity) defaultCauser() Ref {
 	if p.logger.cfg.ResolveCauser != nil {
 		return p.logger.cfg.ResolveCauser(p.ctx, p.grant)
 	}
+	// An operator viewing or acting in somebody's account is who did it: the
+	// entry names them, and the account it was done in is a property.
+	if who := p.grant.Impersonator(); who != nil && who.ID != "" {
+		return Ref{Type: p.logger.cfg.CauserType, ID: who.ID}
+	}
 	subject := p.grant.Subject()
 	if subject.ID == "" || subject.IsGuest() {
 		return Ref{}
 	}
 	return Ref{Type: p.logger.cfg.CauserType, ID: subject.ID}
+}
+
+// ImpersonationProperty is the property an entry recorded while an operator
+// viewed or acted in somebody's account carries: who the operator was, whose
+// account it was, and whether they could write in it.
+const ImpersonationProperty = "impersonation"
+
+// markImpersonation records on an entry that it was made from inside
+// somebody else's account, whatever the caller set as properties.
+func (p *PendingActivity) markImpersonation(activity *Activity) error {
+	who := p.grant.Impersonator()
+	if who == nil {
+		return nil
+	}
+	subject := p.grant.Subject()
+	mode := "viewing"
+	if subject.Acting {
+		mode = "acting"
+	}
+	return activity.SetProperty(ImpersonationProperty, map[string]any{
+		"by": who.ID, "on_behalf_of": subject.ID, "mode": mode,
+	})
 }
 
 // placeholder is Spatie's pattern: a colon, then letters, digits, dot,
