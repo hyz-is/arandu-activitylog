@@ -51,6 +51,17 @@ type Filter struct {
 	// Causer keeps the entries caused by this one; a Ref with only a Type
 	// keeps every entry caused by that kind.
 	Causer Ref
+	// Involves keeps the entries this one caused and the entries an operator
+	// made inside its account -- causer_id, or on_behalf_of, is its ID: what a
+	// person reads as "what was done by me or for me". Its Type narrows the
+	// causer as Causer's does; on_behalf_of names an account of the kind
+	// Config.CauserType records, so a Type of another kind matches only as
+	// causer. A Ref with no ID narrows nothing.
+	//
+	// The column on_behalf_of is not backfilled: an entry made inside an
+	// account before the column was added is found as the operator's, by
+	// Causer, and not as the account's.
+	Involves Ref
 	// Since and Until bound when the entries happened, Since inclusive and
 	// Until exclusive.
 	Since, Until time.Time
@@ -92,7 +103,7 @@ func (s *ActivityService) List(ctx context.Context, actor security.Subject, filt
 	case limit > maxLimit:
 		limit = maxLimit
 	}
-	page := filtered(Activities(s.db), filter)
+	page := filtered(Activities(s.db), filter, s.cfg.CauserType)
 	if q.Cursor != "" {
 		anchor, err := Activities(s.db).WhereKey(q.Cursor).Value(ctx, g, "created_at")
 		if err != nil {
@@ -132,7 +143,7 @@ func (s *ActivityService) Paginate(ctx context.Context, actor security.Subject, 
 	case perPage > maxLimit:
 		perPage = maxLimit
 	}
-	total, err := filtered(Activities(s.db), filter).Count(ctx, g)
+	total, err := filtered(Activities(s.db), filter, s.cfg.CauserType).Count(ctx, g)
 	if err != nil {
 		return Page{}, err
 	}
@@ -146,7 +157,7 @@ func (s *ActivityService) Paginate(ctx context.Context, actor security.Subject, 
 	if page > pages {
 		page = pages
 	}
-	items, err := filtered(Activities(s.db), filter).OrderByDesc("created_at").OrderByDesc("id").
+	items, err := filtered(Activities(s.db), filter, s.cfg.CauserType).OrderByDesc("created_at").OrderByDesc("id").
 		Offset((page-1)*perPage).Limit(perPage).Get(ctx, g)
 	if err != nil {
 		return Page{}, err
@@ -172,10 +183,10 @@ func (s *ActivityService) Count(ctx context.Context, actor security.Subject, fil
 	if err != nil {
 		return 0, err
 	}
-	return filtered(Activities(s.db), filter).Count(ctx, g)
+	return filtered(Activities(s.db), filter, s.cfg.CauserType).Count(ctx, g)
 }
 
-func filtered(query *ActivityQuery, filter Filter) *ActivityQuery {
+func filtered(query *ActivityQuery, filter Filter, causerType string) *ActivityQuery {
 	if len(filter.LogNames) > 0 {
 		names := make([]any, 0, len(filter.LogNames))
 		for _, name := range filter.LogNames {
@@ -197,6 +208,19 @@ func filtered(query *ActivityQuery, filter Filter) *ActivityQuery {
 	}
 	if filter.Causer.ID != "" {
 		query = query.Where("causer_id", "=", filter.Causer.ID)
+	}
+	if involves := filter.Involves; involves.ID != "" {
+		query = query.Where(func(either *ActivityQuery) {
+			either.Where(func(caused *ActivityQuery) {
+				if involves.Type != "" {
+					caused.Where("causer_type", "=", involves.Type)
+				}
+				caused.Where("causer_id", "=", involves.ID)
+			})
+			if involves.Type == "" || involves.Type == causerType {
+				either.OrWhere("on_behalf_of", "=", involves.ID)
+			}
+		})
 	}
 	if !filter.Since.IsZero() {
 		query = query.Where("created_at", ">=", filter.Since.UTC())

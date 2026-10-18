@@ -145,6 +145,12 @@ entries, err := activity.Service().List(ctx, actor, activitylog.Filter{
 	Event:    "refunded",                    // forEvent
 }, data.Query{Limit: 50})
 
+// What a person did, and what an operator did inside their account: the
+// "mine" a person reads. causer_id or on_behalf_of is the ID.
+mine, err := activity.Service().List(ctx, actor, activitylog.Filter{
+	Involves: activitylog.Ref{Type: "user", ID: actor.ID},
+}, data.Query{Limit: 50})
+
 removed, err := activity.Service().Clean(ctx, actor, 365, "") // activitylog:clean
 ```
 
@@ -152,8 +158,14 @@ removed, err := activity.Service().Clean(ctx, actor, 365, "") // activitylog:cle
 terminal, and the module schedules it daily per tenant (`Config.CleanSpec`,
 `"-"` for none, `Config.CleanAfterDays`, 365 by default).
 
+An entry recorded while an operator views or acts in somebody's account names
+the operator as its causer and the account in its `on_behalf_of` column (and,
+as before, in the `impersonation` property). The column was added after
+v0.3.0 and is not backfilled: older entries are found by `Causer`, as the
+operator's, and not by `Involves` as the account's.
+
 `GET /activity-log` and `GET /activity-log/{id}` answer the same reads as JSON,
-under `Config.Prefix`.
+under `Config.Prefix`. `?involves_type=` and `?involves_id=` are `Filter.Involves`.
 
 ## License
 

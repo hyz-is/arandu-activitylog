@@ -10,6 +10,21 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+### Added
+
+- `Filter.Involves`: the entries a subject caused **or** that an operator made
+  inside its account -- "caused by or done on behalf of", what a person reads
+  as their own history. The read route takes it as `?involves_type=` and
+  `?involves_id=`.
+- `Activity.OnBehalfOf` and the `on_behalf_of` column, indexed with the tenant
+  (`activity_log_tenant_on_behalf_of_index`). The logger fills it from the
+  Grant whenever an operator views or acts in somebody's account, and clears
+  whatever a tap set on any other entry. The JSON resource answers it.
+- The migration `20261018_0001_add_on_behalf_of_to_activity_log_table`. Run
+  `aru migrate` before the new version serves: the logger writes the column.
+  It backfills nothing: entries recorded before it keep the account only in
+  their `impersonation` property.
+
 ## [0.3.0] - 2026-10-13
 
 ### Added

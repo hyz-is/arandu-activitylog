@@ -350,6 +350,8 @@ const ImpersonationProperty = "impersonation"
 func (p *PendingActivity) markImpersonation(activity *Activity) error {
 	who := p.grant.Impersonator()
 	if who == nil {
+		// Only the Grant says an entry was made in somebody else's account.
+		activity.OnBehalfOf = nil
 		return nil
 	}
 	subject := p.grant.Subject()
@@ -357,6 +359,9 @@ func (p *PendingActivity) markImpersonation(activity *Activity) error {
 	if subject.Acting {
 		mode = "acting"
 	}
+	// The column is what a filter reads by, with an index; the property is
+	// what the entry says about itself, as it always did.
+	activity.OnBehalfOf = optional(subject.ID)
 	return activity.SetProperty(ImpersonationProperty, map[string]any{
 		"by": who.ID, "on_behalf_of": subject.ID, "mode": mode,
 	})

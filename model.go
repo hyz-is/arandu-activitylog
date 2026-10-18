@@ -63,6 +63,13 @@ type Activity struct {
 	CauserType *string `db:"causer_type"`
 	CauserID   *string `db:"causer_id"`
 
+	// OnBehalfOf is whose account the entry was made in when an operator
+	// viewed or acted there: the identifier of the Grant's subject, the
+	// account's owner, while CauserID names the operator. It is null on every
+	// other entry, and on the entries written before the column existed, which
+	// carry the same identifier only in the impersonation property.
+	OnBehalfOf *string `db:"on_behalf_of"`
+
 	// AttributeChanges is the JSON of a record's change: what its attributes
 	// became and what they were. See Changes.
 	AttributeChanges *string `db:"attribute_changes"`

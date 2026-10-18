@@ -131,10 +131,11 @@ func (m *Module) Routes(r *fhttp.Router) {
 
 func (m *Module) index(ctx *fhttp.Context) error {
 	filter := Filter{
-		Event:   ctx.Query("event"),
-		Subject: Ref{Type: ctx.Query("subject_type"), ID: ctx.Query("subject_id")},
-		Causer:  Ref{Type: ctx.Query("causer_type"), ID: ctx.Query("causer_id")},
-		Search:  ctx.Query("q"),
+		Event:    ctx.Query("event"),
+		Subject:  Ref{Type: ctx.Query("subject_type"), ID: ctx.Query("subject_id")},
+		Causer:   Ref{Type: ctx.Query("causer_type"), ID: ctx.Query("causer_id")},
+		Involves: Ref{Type: ctx.Query("involves_type"), ID: ctx.Query("involves_id")},
+		Search:   ctx.Query("q"),
 	}
 	if names := strings.TrimSpace(ctx.Query("log")); names != "" {
 		filter.LogNames = strings.Split(names, ",")
@@ -213,6 +214,7 @@ func (r Resource) ToArray() map[string]any {
 		"subject_id":   text(a.SubjectID),
 		"causer_type":  text(a.CauserType),
 		"causer_id":    text(a.CauserID),
+		"on_behalf_of": text(a.OnBehalfOf),
 		"attribute_changes": map[string]any{
 			"attributes": changes.Attributes,
 			"old":        changes.Old,
@@ -296,7 +298,7 @@ func (m *Module) Schedule() []foundation.Task {
 
 // Migrations declares the schema this module owns.
 func (m *Module) Migrations() []foundation.Migration {
-	return []foundation.Migration{createActivityLogTable{}}
+	return []foundation.Migration{createActivityLogTable{}, addActivityLogOnBehalfOf{}}
 }
 
 var _ migrations.ReversibleMigration = createActivityLogTable{}
@@ -337,4 +339,41 @@ func (createActivityLogTable) Up(ctx context.Context, conn migrations.Connection
 // Down drops it.
 func (createActivityLogTable) Down(ctx context.Context, conn migrations.Connection) error {
 	return conn.Schema().Drop(ctx, ActivityTable)
+}
+
+var _ migrations.ReversibleMigration = addActivityLogOnBehalfOf{}
+
+// addActivityLogOnBehalfOf is the column that names whose account an entry
+// was made in by an operator, and the index Filter.Involves reads it by.
+//
+// It is nullable and nothing is backfilled: an entry written before it ran
+// keeps the same identifier in its impersonation property, and a filter on
+// the column does not find it. Copying the property into the column is a
+// statement over the whole log, which is the application's to schedule, not a
+// migration's to run inside a deploy.
+type addActivityLogOnBehalfOf struct{ migrations.BaseMigration }
+
+// GetName is the migration's identity, and it carries the order.
+func (addActivityLogOnBehalfOf) GetName() string {
+	return "20261018_0001_add_on_behalf_of_to_activity_log_table"
+}
+
+// Up adds the column and its index, beside the tenant every read is scoped by.
+func (addActivityLogOnBehalfOf) Up(ctx context.Context, conn migrations.Connection) error {
+	return conn.Schema().Table(ctx, ActivityTable, func(table *schema.Blueprint) {
+		table.String("on_behalf_of").Nullable()
+		table.Index([]string{"tenant_id", "on_behalf_of"}, "activity_log_tenant_on_behalf_of_index")
+	})
+}
+
+// Down drops the index, then the column.
+func (addActivityLogOnBehalfOf) Down(ctx context.Context, conn migrations.Connection) error {
+	if err := conn.Schema().Table(ctx, ActivityTable, func(table *schema.Blueprint) {
+		table.DropIndex("activity_log_tenant_on_behalf_of_index")
+	}); err != nil {
+		return err
+	}
+	return conn.Schema().Table(ctx, ActivityTable, func(table *schema.Blueprint) {
+		table.DropColumn("on_behalf_of")
+	})
 }

@@ -64,3 +64,75 @@ func TestAnEntryMadeInsideSomebodysAccountNamesTheOperator(t *testing.T) {
 		t.Fatalf("an ordinary entry is %v by %q", plain.Properties(), plain.Causer().ID)
 	}
 }
+
+// What was done by a person and what an operator did inside their account are
+// one filter, read by an indexed column the logger fills from the Grant.
+func TestInvolvesKeepsWhatAPersonDidAndWhatWasDoneInTheirAccount(t *testing.T) {
+	db := openDatabase(t)
+	logger := newLogger(t, db, activitylog.Config{})
+	svc := newService(t, db, activitylog.Config{})
+	ctx := context.Background()
+
+	owner := member("acme")
+	operator := security.Subject{ID: "op-1", Tenant: "acme", Roles: []string{"admin"}, Verified: true}
+	acting, err := auth.ImpersonateActing(operator, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := security.Subject{ID: "user-other", Tenant: "acme", Verified: true}
+
+	mine, err := logger.Activity(ctx, grantOf(t, owner)).Event("updated").Log("by the owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside, err := logger.Activity(ctx, grantOf(t, acting)).Event("updated").Log("by the operator, inside")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A tap that names an account is overwritten: only the Grant says so.
+	forged, err := logger.Activity(ctx, grantOf(t, other)).Tap(func(a *activitylog.Activity, _ string) {
+		account := owner.ID
+		a.OnBehalfOf = &account
+	}).Log("by somebody else")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := logger.Activity(ctx, grantOf(t, operator)).Event("updated").Log("by the operator, at home"); err != nil {
+		t.Fatal(err)
+	}
+
+	if inside.OnBehalfOf == nil || *inside.OnBehalfOf != owner.ID {
+		t.Fatalf("the entry made inside the account has on_behalf_of %v", inside.OnBehalfOf)
+	}
+	if mine.OnBehalfOf != nil || forged.OnBehalfOf != nil {
+		t.Fatalf("an ordinary entry carries on_behalf_of: %v, %v", mine.OnBehalfOf, forged.OnBehalfOf)
+	}
+
+	ids := func(filter activitylog.Filter) map[string]bool {
+		out := map[string]bool{}
+		for _, e := range entries(t, svc, "acme", filter) {
+			out[e.ID] = true
+		}
+		return out
+	}
+	got := ids(activitylog.Filter{Involves: activitylog.Ref{ID: owner.ID}})
+	if len(got) != 2 || !got[mine.ID] || !got[inside.ID] {
+		t.Fatalf("Involves the owner kept %v, want their own entry and the operator's inside", got)
+	}
+	got = ids(activitylog.Filter{Involves: activitylog.Ref{Type: activitylog.DefaultCauserType, ID: owner.ID}})
+	if len(got) != 2 || !got[mine.ID] || !got[inside.ID] {
+		t.Fatalf("Involves the owner by kind kept %v", got)
+	}
+	got = ids(activitylog.Filter{Involves: activitylog.Ref{Type: "author", ID: owner.ID}})
+	if len(got) != 0 {
+		t.Fatalf("Involves of another kind matched the account: %v", got)
+	}
+	// The other filters still narrow it, and another tenant sees none of it.
+	got = ids(activitylog.Filter{Involves: activitylog.Ref{ID: owner.ID}, Causer: activitylog.Ref{ID: operator.ID}})
+	if len(got) != 1 || !got[inside.ID] {
+		t.Fatalf("Involves with Causer kept %v", got)
+	}
+	if foreign := entries(t, svc, "globex", activitylog.Filter{Involves: activitylog.Ref{ID: owner.ID}}); len(foreign) != 0 {
+		t.Fatalf("another tenant read %d entries of this account", len(foreign))
+	}
+}

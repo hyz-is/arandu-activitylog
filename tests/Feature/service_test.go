@@ -2,6 +2,7 @@ package feature_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/arandu-io/framework/foundation"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/database/migrations"
 
 	activitylog "github.com/hyz-is/arandu-activitylog"
 )
@@ -159,8 +162,8 @@ func TestTheModuleDeclaresItsTableScheduleAndRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(module.Migrations()) != 1 {
-		t.Error("the module does not declare its table")
+	if got := module.Migrations(); len(got) != 2 || got[0].GetName() >= got[1].GetName() {
+		t.Error("the module does not declare its table and the on_behalf_of column, in order")
 	}
 	tasks := module.Schedule()
 	if len(tasks) != 1 || tasks[0].Scope != foundation.PerTenant || tasks[0].Action != activitylog.ActivityClean || tasks[0].Spec != activitylog.DefaultCleanSpec {
@@ -207,5 +210,39 @@ func TestTheModuleDeclaresItsTableScheduleAndRoutes(t *testing.T) {
 	}
 	if _, err := activitylog.New(activitylog.Config{Prefix: "no-slash"}, db, nil); err == nil {
 		t.Error("a prefix without a slash was accepted")
+	}
+}
+
+// The on_behalf_of migration goes down and up again over a table holding
+// entries, and the entries survive it.
+func TestTheOnBehalfOfColumnMigratesDownAndUp(t *testing.T) {
+	name := t.Name()
+	raw, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	raw.SetMaxOpenConns(1)
+	conn := database.ForMigrations(database.NewConnection(raw, "", "", map[string]any{"driver": string(database.DialectSQLite), "name": name}))
+	ctx := context.Background()
+	all := (&activitylog.Module{}).Migrations()
+	if err := all[0].Up(ctx, conn); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`insert into activity_log (id, tenant_id, description, created_at, updated_at) values ('a-1', 'acme', 'before', '2026-01-01 00:00:00', '2026-01-01 00:00:00')`); err != nil {
+		t.Fatal(err)
+	}
+	column := all[1].(migrations.ReversibleMigration)
+	for _, step := range []func(context.Context, migrations.Connection) error{column.Up, column.Down, column.Up} {
+		if err := step(ctx, conn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if has, err := conn.Schema().HasColumn(ctx, activitylog.ActivityTable, "on_behalf_of"); err != nil || !has {
+		t.Fatalf("the column is missing after up: %v, %v", has, err)
+	}
+	var kept int
+	if err := raw.QueryRow(`select count(*) from activity_log where on_behalf_of is null`).Scan(&kept); err != nil || kept != 1 {
+		t.Fatalf("the entry written before the column holds %d, %v", kept, err)
 	}
 }
