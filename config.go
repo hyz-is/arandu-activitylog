@@ -111,6 +111,16 @@ type Config struct {
 	// PageSize is how many entries one page answers with. Zero means
 	// DefaultPageSize, and anything above MaxPageSize is refused.
 	PageSize int
+
+	// SimplePagination pages the screens with SimplePaginate: Previous and
+	// Next, and no page count or total. Paginate counts every entry of the
+	// tenant's log the filter keeps on every page drawn, and that count grows
+	// with the log; this costs what the page costs. False keeps the numbered
+	// pages. The JSON route pages by cursor either way and counts nothing.
+	//
+	// A published index view older than this option prints "of 0 · 0" under
+	// it; publishing the views again draws the page without the count.
+	SimplePagination bool
 }
 
 // Validate reports what the configuration cannot be used with.

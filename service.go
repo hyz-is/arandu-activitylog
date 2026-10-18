@@ -124,9 +124,14 @@ func (s *ActivityService) List(ctx context.Context, actor security.Subject, filt
 
 // Page is one numbered page of the log and where it sits among the rest --
 // what a screen with page numbers draws.
+//
+// Paginate fills every field. SimplePaginate counts nothing, so it leaves
+// Pages and Total at zero and says only whether a page follows.
 type Page struct {
 	Items              []*Activity
 	Page, Pages, Total int
+	// HasMore says a page follows this one.
+	HasMore bool
 }
 
 // Paginate reads one numbered page of the log, newest first: Eloquent's
@@ -162,7 +167,42 @@ func (s *ActivityService) Paginate(ctx context.Context, actor security.Subject, 
 	if err != nil {
 		return Page{}, err
 	}
-	return Page{Items: items, Page: page, Pages: pages, Total: int(total)}, nil
+	return Page{Items: items, Page: page, Pages: pages, Total: int(total), HasMore: page < pages}, nil
+}
+
+// SimplePaginate reads one numbered page of the log, newest first, without
+// counting the log: Eloquent's simplePaginate. It reads one entry past the
+// page to say whether another follows, and leaves Pages and Total at zero.
+//
+// Paginate counts every entry the filter keeps, on every page, and that count
+// grows with the log; this one costs what the page costs. A page past the last
+// is empty rather than the last, since nothing says where the last is.
+// List, which pages by a cursor rather than an offset, costs the same on the
+// thousandth page as on the first.
+func (s *ActivityService) SimplePaginate(ctx context.Context, actor security.Subject, filter Filter, page, perPage int) (Page, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, ActivityView, Activity{})
+	if err != nil {
+		return Page{}, err
+	}
+	switch {
+	case perPage <= 0:
+		perPage = defaultLimit
+	case perPage > maxLimit:
+		perPage = maxLimit
+	}
+	if page < 1 {
+		page = 1
+	}
+	items, err := filtered(Activities(s.db), filter, s.cfg.CauserType).OrderByDesc("created_at").OrderByDesc("id").
+		Offset((page-1)*perPage).Limit(perPage+1).Get(ctx, g)
+	if err != nil {
+		return Page{}, err
+	}
+	more := len(items) > perPage
+	if more {
+		items = items[:perPage]
+	}
+	return Page{Items: items, Page: page, HasMore: more}, nil
 }
 
 // ForSubject pages through the entries about a record, newest first --

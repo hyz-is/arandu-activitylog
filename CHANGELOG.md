@@ -24,6 +24,15 @@ a release is corrected by another release and never by moving a tag.
   `aru migrate` before the new version serves: the logger writes the column.
   It backfills nothing: entries recorded before it keep the account only in
   their `impersonation` property.
+- `ActivityService.SimplePaginate`, Eloquent's simplePaginate: one numbered
+  page without counting the log, reading one entry past it to say
+  `Page.HasMore`. `Paginate` counted every entry the filter keeps on every
+  page, 11 to 40 ms on 500 thousand entries of one tenant, growing with the
+  log.
+- `Page.HasMore`, filled by `Paginate` and `SimplePaginate`.
+- `Config.SimplePagination`: the screens page with `SimplePaginate` -- Previous
+  and Next, no total. `IndexPageData.Counted` says which, and the published
+  index view draws the page count only when it is set.
 
 ## [0.3.0] - 2026-10-13
 

@@ -58,7 +58,11 @@ type IndexData = activitylog.IndexPageData
 				</table>
 			</div>
 			<nav class="flex items-center justify-between text-sm" aria-label="{{ .Labels.T("page") }}">
-				<span>{{ .Labels.T("page") }} {{ .PageNumber }} {{ .Labels.T("of") }} {{ .Pages }} · {{ .Total }}</span>
+				@if(.Counted)
+					<span>{{ .Labels.T("page") }} {{ .PageNumber }} {{ .Labels.T("of") }} {{ .Pages }} · {{ .Total }}</span>
+				@else
+					<span>{{ .Labels.T("page") }} {{ .PageNumber }}</span>
+				@endif
 				<span class="flex gap-2">
 					@if(.PreviousURL != "")
 						<a class="btn" data-variant="outline" data-size="sm" href="{{ .PreviousURL }}">{{ .Labels.T("previous") }}</a>

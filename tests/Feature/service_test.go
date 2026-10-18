@@ -36,6 +36,9 @@ func TestTheShippedPolicyRefusesEveryAction(t *testing.T) {
 	if _, err := svc.Paginate(ctx, actor, activitylog.Filter{}, 1, 10); !errors.Is(err, security.ErrForbidden) {
 		t.Errorf("Paginate: %v", err)
 	}
+	if _, err := svc.SimplePaginate(ctx, actor, activitylog.Filter{}, 1, 10); !errors.Is(err, security.ErrForbidden) {
+		t.Errorf("SimplePaginate: %v", err)
+	}
 	if _, err := svc.Count(ctx, actor, activitylog.Filter{}); !errors.Is(err, security.ErrForbidden) {
 		t.Errorf("Count: %v", err)
 	}
@@ -103,6 +106,31 @@ func TestTheLogIsReadByItsScopesAndPagedNewestFirst(t *testing.T) {
 	}
 	if past, _ := svc.Paginate(ctx, member("acme"), activitylog.Filter{}, 9, 3); past.Page != 2 {
 		t.Errorf("a page past the last answered page %d", past.Page)
+	}
+	if numbered.HasMore {
+		t.Errorf("the last numbered page says HasMore %v", numbered.HasMore)
+	}
+	if head, _ := svc.Paginate(ctx, member("acme"), activitylog.Filter{}, 1, 3); !head.HasMore {
+		t.Error("the first of two numbered pages says nothing follows")
+	}
+
+	// Without the count: the same entries, and only whether a page follows.
+	simple, err := svc.SimplePaginate(ctx, member("acme"), activitylog.Filter{}, 1, 3)
+	if err != nil || len(simple.Items) != 3 || !simple.HasMore || simple.Total != 0 || simple.Pages != 0 || simple.Page != 1 {
+		t.Errorf("simple first page = %+v (%v)", simple, err)
+	}
+	last, err := svc.SimplePaginate(ctx, member("acme"), activitylog.Filter{}, 2, 3)
+	if err != nil || len(last.Items) != 1 || last.HasMore || last.Items[0].ID != numbered.Items[0].ID {
+		t.Errorf("simple last page = %+v (%v)", last, err)
+	}
+	if exact, _ := svc.SimplePaginate(ctx, member("acme"), activitylog.Filter{}, 1, 4); exact.HasMore || len(exact.Items) != 4 {
+		t.Errorf("a page holding exactly the rest says HasMore %v with %d", exact.HasMore, len(exact.Items))
+	}
+	if past, _ := svc.SimplePaginate(ctx, member("acme"), activitylog.Filter{}, 9, 3); len(past.Items) != 0 || past.HasMore {
+		t.Errorf("a simple page past the last = %+v", past)
+	}
+	if other, _ := svc.SimplePaginate(ctx, member("globex"), activitylog.Filter{}, 1, 50); len(other.Items) != 1 {
+		t.Errorf("another tenant's simple page holds %d entries", len(other.Items))
 	}
 	if _, err := svc.Find(ctx, member("acme"), foreign.ID); !errors.Is(err, activitylog.ErrNotFound) {
 		t.Errorf("another tenant's entry: %v, want ErrNotFound", err)

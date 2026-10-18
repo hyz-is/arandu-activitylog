@@ -55,6 +55,10 @@ type IndexPageData struct {
 	Rows                       []Row
 	PageNumber, Pages, Total   int
 	PreviousURL, NextURL       string
+	// Counted says Pages and Total were counted. Under
+	// Config.SimplePagination they were not, and the page draws only its
+	// number.
+	Counted bool
 }
 
 // ShowPageData is one entry.

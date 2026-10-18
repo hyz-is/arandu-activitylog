@@ -135,6 +135,12 @@ aru view:build
 `Config.Locale` picks the words ("en", "pt-BR"), and `Config.Name` names a
 subject or a causer -- a user by their name rather than their identifier.
 
+The screens number their pages with `Paginate`, which counts every entry the
+filter keeps on every page drawn: the count grows with the log. With
+`Config.SimplePagination` they page with `SimplePaginate` instead -- Previous and
+Next, no total -- and cost what the page costs. Publish the views again when
+turning it on, or an older index view prints "of 0 · 0".
+
 ## Reading and cleaning
 
 ```go
@@ -150,6 +156,11 @@ entries, err := activity.Service().List(ctx, actor, activitylog.Filter{
 mine, err := activity.Service().List(ctx, actor, activitylog.Filter{
 	Involves: activitylog.Ref{Type: "user", ID: actor.ID},
 }, data.Query{Limit: 50})
+
+// Pages for a screen: Paginate counts the log (Page.Pages, Page.Total);
+// SimplePaginate does not, and says only Page.HasMore. List pages by a cursor
+// -- keyset on (created_at, id) -- and costs the same on any page.
+page, err := activity.Service().SimplePaginate(ctx, actor, activitylog.Filter{}, 2, 50)
 
 removed, err := activity.Service().Clean(ctx, actor, 365, "") // activitylog:clean
 ```

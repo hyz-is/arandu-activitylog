@@ -35,6 +35,16 @@ them, and the impersonation property naming them -- reads it with one:
 activitylog.Filter{Involves: activitylog.Ref{Type: "user", ID: subject.ID}}
 ```
 
+### Paging the screens without a count
+
+`Config.SimplePagination: true` draws the log screen from `SimplePaginate`:
+Previous and Next, and no page count or total, so no `COUNT(*)` over the
+tenant's log on every page. Publish the views again (`aru vendor:publish
+--apply`, then `aru view:build`) when turning it on: an index view published
+from an earlier version prints "of 0 · 0" without the count. Code that pages
+by itself may call `SimplePaginate` in place of `Paginate`, or `List` with a
+cursor for a log of any size.
+
 ## v0.3.0
 
 An entry recorded inside somebody's account names the operator as its causer

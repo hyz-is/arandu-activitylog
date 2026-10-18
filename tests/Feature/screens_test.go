@@ -99,3 +99,54 @@ func TestTheScreensCarryTheApplicationNameOnTheRequest(t *testing.T) {
 		t.Errorf("the log lost its title or token: %+v", answer.Data)
 	}
 }
+
+// With SimplePagination the log screen is drawn from a page nobody counted:
+// it says only whether another page follows.
+func TestTheScreensPageWithoutCountingUnderSimplePagination(t *testing.T) {
+	db := openDatabase(t)
+	sessions := security.NewSessionStore([]byte("0123456789abcdef0123456789abcdef"), time.Hour, false, security.NewMemoryBackend())
+	logger := newLogger(t, db, activitylog.Config{})
+	for range 3 {
+		if _, err := logger.Activity(context.Background(), grantOf(t, member("acme"))).Log("entry"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	draw := func(simple bool, page string) (counted bool, pages, total int, next string) {
+		t.Helper()
+		module, err := activitylog.New(activitylog.Config{Tenant: "acme", Screens: true, Policy: openPolicy{}, PageSize: 2, SimplePagination: simple}, db, sessions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		router := fhttp.NewRouter()
+		module.Routes(router.ForModule(module.Name()))
+		request := httptest.NewRequest(http.MethodGet, activitylog.DefaultPrefix+"?page="+page, nil)
+		request.Header.Set("Accept", hhttp.ViewDataMediaType)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("the log answered %d: %s", response.Code, response.Body.String())
+		}
+		var answer struct {
+			Data struct {
+				Counted      bool
+				Pages, Total int
+				NextURL      string
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &answer); err != nil {
+			t.Fatal(err)
+		}
+		return answer.Data.Counted, answer.Data.Pages, answer.Data.Total, answer.Data.NextURL
+	}
+
+	if counted, pages, total, next := draw(false, "1"); !counted || pages != 2 || total != 3 || next == "" {
+		t.Errorf("the numbered screen drew counted=%v pages=%d total=%d next=%q", counted, pages, total, next)
+	}
+	if counted, pages, total, next := draw(true, "1"); counted || pages != 0 || total != 0 || next == "" {
+		t.Errorf("the simple screen drew counted=%v pages=%d total=%d next=%q", counted, pages, total, next)
+	}
+	if _, _, _, next := draw(true, "2"); next != "" {
+		t.Errorf("the last simple page links to %q", next)
+	}
+}

@@ -16,14 +16,18 @@ import (
 // indexPage draws one numbered page of the log.
 func (m *Module) indexPage(ctx *fhttp.Context, filter Filter) error {
 	page, _ := strconv.Atoi(ctx.Query("page"))
-	result, err := m.svc.Paginate(ctx.Ctx(), m.subject(ctx.Request), filter, page, m.cfg.PageSize)
+	read := m.svc.Paginate
+	if m.cfg.SimplePagination {
+		read = m.svc.SimplePaginate
+	}
+	result, err := read(ctx.Ctx(), m.subject(ctx.Request), filter, page, m.cfg.PageSize)
 	if err != nil {
 		return m.answer(ctx, err)
 	}
 	labels := LabelsFor(m.cfg.Locale)
 	data := IndexPageData{Page: m.page(ctx, labels.T("title")), Prefix: m.cfg.Prefix, Labels: labels,
 		Log: ctx.Query("log"), Event: filter.Event, Search: filter.Search,
-		PageNumber: result.Page, Pages: result.Pages, Total: result.Total}
+		PageNumber: result.Page, Pages: result.Pages, Total: result.Total, Counted: !m.cfg.SimplePagination}
 	for _, entry := range result.Items {
 		data.Rows = append(data.Rows, m.row(ctx, labels, entry))
 	}
@@ -32,7 +36,7 @@ func (m *Module) indexPage(ctx *fhttp.Context, filter Filter) error {
 		query.Set("page", strconv.Itoa(result.Page-1))
 		data.PreviousURL = m.cfg.Prefix + "?" + query.Encode()
 	}
-	if result.Page < result.Pages {
+	if result.HasMore {
 		query.Set("page", strconv.Itoa(result.Page+1))
 		data.NextURL = m.cfg.Prefix + "?" + query.Encode()
 	}
