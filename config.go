@@ -90,6 +90,15 @@ type Config struct {
 	// policy: it takes the Grant the caller's own action was authorized with.
 	Policy security.Policy[Activity]
 
+	// PlatformPolicy decides who reads the log of every tenant at once --
+	// ActivityService.ReadAll, under ActivityViewAll: the platform
+	// administrator, who reads every entry where a user reads only their own.
+	// It is the only policy ReadAll asks, so a Policy that opens the log of an
+	// organization, however widely, opens nothing across organizations. Nil
+	// refuses everybody, and so do ActivityPolicy and PermissionPolicy: the
+	// application writes this one for its platform administrators.
+	PlatformPolicy security.Policy[Activity]
+
 	// Prefix is the path the read routes are mounted under. Empty means
 	// DefaultPrefix.
 	Prefix string
@@ -173,6 +182,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.Policy == nil {
 		c.Policy = ActivityPolicy{}
+	}
+	if c.PlatformPolicy == nil {
+		c.PlatformPolicy = ActivityPolicy{}
 	}
 	return c
 }

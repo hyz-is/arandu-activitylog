@@ -26,6 +26,31 @@ update activity_log
  where on_behalf_of is null and properties like '%"impersonation"%';
 ```
 
+### The platform administrator reads every tenant
+
+An application that read the platform's view of the log one tenant at a time,
+with a Grant per tenant, writes the rule for its platform administrators and
+reads them all at once:
+
+```go
+type PlatformActivity struct{}
+
+func (PlatformActivity) Can(ctx context.Context, s security.Subject, a security.Action, _ activitylog.Activity) error {
+	if a == activitylog.ActivityViewAll && isPlatformManager(s) {
+		return nil
+	}
+	return errors.New("not a platform manager")
+}
+
+activitylog.Config{PlatformPolicy: PlatformActivity{}}
+```
+
+then `activity.Service().ReadAll(ctx, actor, activitylog.PlatformQuery{...})`.
+Declare `activitylog.PlatformActions()` only where platform administrators are
+granted, never in the catalogue an organization grants from. Nothing changes
+for an application that does not set `PlatformPolicy`: `ReadAll` refuses
+everybody.
+
 ### "Mine" in one filter
 
 An application that read a person's own history with two queries -- caused by

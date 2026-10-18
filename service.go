@@ -8,6 +8,7 @@ import (
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/database/model"
 )
 
 // Pagination bounds for List: a request that asks for everything gets the
@@ -23,9 +24,10 @@ const (
 // -- and every method authorizes before the first statement. The Logger is the
 // other half, reached by code that already holds the Grant of what it records.
 type ActivityService struct {
-	db     *data.DB
-	policy security.Policy[Activity]
-	cfg    Config
+	db       *data.DB
+	policy   security.Policy[Activity]
+	platform security.Policy[Activity]
+	cfg      Config
 }
 
 // NewActivityService wires the service over the application's database handle
@@ -35,7 +37,7 @@ func NewActivityService(db *data.DB, cfg Config) (*ActivityService, error) {
 		return nil, err
 	}
 	cfg = cfg.withDefaults()
-	return &ActivityService{db: db, policy: cfg.Policy, cfg: cfg}, nil
+	return &ActivityService{db: db, policy: cfg.Policy, platform: cfg.PlatformPolicy, cfg: cfg}, nil
 }
 
 // Filter narrows a listing: Spatie's inLog, causedBy, forSubject and forEvent
@@ -112,12 +114,7 @@ func (s *ActivityService) List(ctx context.Context, actor security.Subject, filt
 		if anchor == nil {
 			return nil, nil
 		}
-		page = page.Where(func(before *ActivityQuery) {
-			before.Where("created_at", "<", anchor).
-				OrWhere(func(same *ActivityQuery) {
-					same.Where("created_at", "=", anchor).Where("id", "<", q.Cursor)
-				})
-		})
+		olderThan(page.Base(), anchor, q.Cursor)
 	}
 	return page.OrderByDesc("created_at").OrderByDesc("id").Limit(limit).Get(ctx, g)
 }
@@ -227,31 +224,38 @@ func (s *ActivityService) Count(ctx context.Context, actor security.Subject, fil
 }
 
 func filtered(query *ActivityQuery, filter Filter, causerType string) *ActivityQuery {
+	narrow(query.Base(), filter, causerType)
+	return query
+}
+
+// narrow adds what a Filter keeps to a query's core builder: a tenant's own
+// listing, or ReadAll's. It is written on the builder so both read one filter.
+func narrow(query *model.Builder, filter Filter, causerType string) {
 	if len(filter.LogNames) > 0 {
 		names := make([]any, 0, len(filter.LogNames))
 		for _, name := range filter.LogNames {
 			names = append(names, name)
 		}
-		query = query.WhereIn("log_name", names)
+		query.WhereIn("log_name", names)
 	}
 	if filter.Event != "" {
-		query = query.Where("event", "=", filter.Event)
+		query.Where("event", "=", filter.Event)
 	}
 	if filter.Subject.Type != "" {
-		query = query.Where("subject_type", "=", filter.Subject.Type)
+		query.Where("subject_type", "=", filter.Subject.Type)
 	}
 	if filter.Subject.ID != "" {
-		query = query.Where("subject_id", "=", filter.Subject.ID)
+		query.Where("subject_id", "=", filter.Subject.ID)
 	}
 	if filter.Causer.Type != "" {
-		query = query.Where("causer_type", "=", filter.Causer.Type)
+		query.Where("causer_type", "=", filter.Causer.Type)
 	}
 	if filter.Causer.ID != "" {
-		query = query.Where("causer_id", "=", filter.Causer.ID)
+		query.Where("causer_id", "=", filter.Causer.ID)
 	}
 	if involves := filter.Involves; involves.ID != "" {
-		query = query.Where(func(either *ActivityQuery) {
-			either.Where(func(caused *ActivityQuery) {
+		query.Where(func(either *model.Builder) {
+			either.Where(func(caused *model.Builder) {
 				if involves.Type != "" {
 					caused.Where("causer_type", "=", involves.Type)
 				}
@@ -263,15 +267,25 @@ func filtered(query *ActivityQuery, filter Filter, causerType string) *ActivityQ
 		})
 	}
 	if !filter.Since.IsZero() {
-		query = query.Where("created_at", ">=", filter.Since.UTC())
+		query.Where("created_at", ">=", filter.Since.UTC())
 	}
 	if !filter.Until.IsZero() {
-		query = query.Where("created_at", "<", filter.Until.UTC())
+		query.Where("created_at", "<", filter.Until.UTC())
 	}
 	if search := strings.TrimSpace(filter.Search); search != "" {
-		query = query.Where("description", "like", "%"+escapeLike(search)+"%")
+		query.Where("description", "like", "%"+escapeLike(search)+"%")
 	}
-	return query
+}
+
+// olderThan keeps what comes after the entry at anchor, id in the order every
+// listing pages in: newest first, by when, then by identifier.
+func olderThan(query *model.Builder, anchor any, id string) {
+	query.Where(func(before *model.Builder) {
+		before.Where("created_at", "<", anchor).
+			OrWhere(func(same *model.Builder) {
+				same.Where("created_at", "=", anchor).Where("id", "<", id)
+			})
+	})
 }
 
 // escapeLike keeps a search for a literal % or _ from matching everything.

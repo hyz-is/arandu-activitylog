@@ -12,6 +12,17 @@ a release is corrected by another release and never by moving a tag.
 
 ### Added
 
+- `ActivityService.ReadAll`: the platform administrator reads every tenant's
+  log, or the tenants `PlatformQuery.Tenants` names, newest first, by the same
+  keyset as `List`, with every `Filter`. It asks `Config.PlatformPolicy` -- a
+  new field, and the only policy it asks -- for the new action
+  `ActivityViewAll` (`activity.view_all`). Nil refuses everybody, and
+  `ActivityPolicy` and `PermissionPolicy` never allow it, so a `Config.Policy`
+  that opens an organization's log opens nothing across organizations. A
+  subject inside somebody else's account is refused. It answers
+  `PlatformEntry` snapshots, with the entry's tenant, that hold no connection.
+- `PlatformActions()`, declared apart from `Actions()` so a catalogue an
+  organization grants from never holds the platform read.
 - `Filter.Involves`: the entries a subject caused **or** that an operator made
   inside its account -- "caused by or done on behalf of", what a person reads
   as their own history. The read route takes it as `?involves_type=` and
@@ -33,6 +44,11 @@ a release is corrected by another release and never by moving a tag.
 - `Config.SimplePagination`: the screens page with `SimplePaginate` -- Previous
   and Next, no total. `IndexPageData.Counted` says which, and the published
   index view draws the page count only when it is set.
+
+### Changed
+
+- `PermissionPolicy` refuses `ActivityViewAll`, which did not exist before.
+  Every action it allowed it still allows.
 
 ## [0.3.0] - 2026-10-13
 

@@ -11,6 +11,7 @@
 //	values.go   -> what a value becomes in the log
 //	policy.go   -> who may read and clean
 //	service.go  -> reading and cleaning, after the policy
+//	platform.go -> the read of every tenant, for the platform administrator
 //	commands.go -> what an operator runs from a terminal
 //	bridges.go  -> the domain events and the mail an application already has
 //

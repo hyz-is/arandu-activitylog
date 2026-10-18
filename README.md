@@ -121,6 +121,38 @@ arandu-permission's catalogue beside the application's own, and pass
 `activitylog.PermissionPolicy{}` as `Config.Policy` so an organization grants
 reading or cleaning its log to whom it decides.
 
+### The platform administrator reads every tenant's log
+
+A user reads their own entries through `Config.Policy`, in their tenant. The
+platform's administrator reads every entry of every tenant through
+`ActivityService.ReadAll`, which asks `Config.PlatformPolicy` -- and no other
+policy -- for `activitylog.ActivityViewAll`:
+
+```go
+activity, err := activitylog.New(activitylog.Config{
+	Policy:         activitylog.PermissionPolicy{}, // an organization's own log
+	PlatformPolicy: policies.PlatformActivity{},    // the application's rule for its platform managers
+}, db, sessions)
+
+page, err := activity.Service().ReadAll(ctx, actor, activitylog.PlatformQuery{
+	Tenants: []string{"acme"},                     // empty: every tenant
+	Filter:  activitylog.Filter{LogNames: []string{"auth"}},
+	Cursor:  cursor,                               // page.NextCursor of the page before
+	Limit:   50,
+})
+// page.Entries[i].Tenant names whose entry it is.
+```
+
+Nil `PlatformPolicy` refuses everybody, and so do `ActivityPolicy` and
+`PermissionPolicy`: the read exists once the application writes the rule for
+its platform administrators. `activitylog.PlatformActions()` are declared apart
+from `Actions()` so no organization's group is ever offered them. A subject
+inside somebody else's account is refused before any policy. `ReadAll` answers
+`PlatformEntry` snapshots, which hold no connection, so nothing read across
+tenants can be saved or deleted through them; it pages by the same keyset as
+`List` and counts nothing. There is no route for it: the application mounts the
+platform screen where its platform administrators sign in.
+
 ## Screens
 
 With `Config.Screens`, the read routes draw the log -- filtered, paged, with

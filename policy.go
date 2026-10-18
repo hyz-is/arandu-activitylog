@@ -14,6 +14,11 @@ const (
 	ActivityView security.Action = "activity.view"
 	// ActivityClean is removing old entries.
 	ActivityClean security.Action = "activity.clean"
+	// ActivityViewAll is reading the log of every tenant at once: the platform
+	// administrator's, through ActivityService.ReadAll. It is asked of
+	// Config.PlatformPolicy and of no other policy, and neither policy this
+	// package ships allows it.
+	ActivityViewAll security.Action = "activity.view_all"
 )
 
 // Actions are the actions this package's policy answers about, for an
@@ -21,6 +26,13 @@ const (
 // so an organization grants reading or cleaning its log to whom it decides,
 // as permission.Actions() is declared.
 func Actions() []security.Action { return []security.Action{ActivityView, ActivityClean} }
+
+// PlatformActions are the actions of the platform rather than of an
+// organization: ActivityViewAll. They are declared apart from Actions so a
+// catalogue an organization grants from never holds them; an application gives
+// them to its platform administrators only, and its Config.PlatformPolicy
+// decides.
+func PlatformActions() []security.Action { return []security.Action{ActivityViewAll} }
 
 // PermissionPolicy decides by the subject's own actions, which
 // arandu-permission fills: it allows an action the subject was granted, on an
@@ -30,10 +42,16 @@ type PermissionPolicy struct{}
 
 var _ security.Policy[Activity] = PermissionPolicy{}
 
-// Can allows a granted action on an entry of the subject's tenant.
+// Can allows a granted action on an entry of the subject's tenant. It never
+// allows ActivityViewAll: an action an organization's group could be given is
+// not one that reads every organization, and the platform read is opened only
+// by a policy the application writes for its platform administrators.
 func (PermissionPolicy) Can(_ context.Context, s security.Subject, a security.Action, record Activity) error {
 	if record.ID != "" && record.TenantID != s.Tenant {
 		return fmt.Errorf("activity belongs to another tenant")
+	}
+	if a == ActivityViewAll {
+		return fmt.Errorf("%s is decided by the application's platform policy", a)
 	}
 	if s.Can(a) {
 		return nil

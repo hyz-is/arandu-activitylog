@@ -126,7 +126,7 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 				t.Errorf("ActivityService.%s never calls security.Authorize", function.Name.Name)
 				continue
 			}
-			for _, entry := range []string{"Activities", "filtered", "clean"} {
+			for _, entry := range []string{"Activities", "Entries", "filtered", "narrow", "clean"} {
 				if reach := firstCall(function.Body, entry); reach != token.NoPos && reach < authorize {
 					t.Errorf("ActivityService.%s reaches %s before it authorizes", function.Name.Name, entry)
 				}
@@ -135,6 +135,31 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no exported ActivityService method was found, so this test proved nothing")
+	}
+}
+
+// The one read without the tenant filter is ReadAll's: the internal package
+// everytenant is imported by one file and its query started by one function,
+// so no other path -- a route, the logger, the clean -- reaches every
+// tenant's rows.
+func TestOnlyReadAllReachesEveryTenant(t *testing.T) {
+	callers := map[string]bool{}
+	for _, source := range productionFiles(t) {
+		for _, decl := range source.file.Decls {
+			function, ok := decl.(*ast.FuncDecl)
+			if !ok || function.Body == nil {
+				continue
+			}
+			if firstCall(function.Body, "Entries") != token.NoPos {
+				callers[receiverType(function)+"."+function.Name.Name] = true
+			}
+		}
+		if strings.Contains(source.text, "internal/everytenant\"") && source.path != "platform.go" {
+			t.Errorf("%s imports the table without the tenant filter", source.path)
+		}
+	}
+	if len(callers) != 1 || !callers["ActivityService.ReadAll"] {
+		t.Errorf("everytenant.Entries is called from %v, want ActivityService.ReadAll only", callers)
 	}
 }
 
