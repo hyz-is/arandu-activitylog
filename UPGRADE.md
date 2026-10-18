@@ -1,6 +1,6 @@
 # Upgrade Guide
 
-## Unreleased
+## v0.4.0
 
 Nothing to change in code that calls this package: every addition is a new
 field, method or option, and leaving each one out keeps what v0.3.0 did.
