@@ -138,10 +138,10 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 	}
 }
 
-// The one read without the tenant filter is ReadAll's: the internal package
-// everytenant is imported by one file and its query started by one function,
-// so no other path -- a route, the logger, the clean -- reaches every
-// tenant's rows.
+// The reads without the tenant filter are the platform's, ReadAll and
+// ReadEntry: the internal package everytenant is imported by one file and its
+// query started by those two functions, so no other path -- a route, the
+// logger, the clean -- reaches every tenant's rows.
 func TestOnlyReadAllReachesEveryTenant(t *testing.T) {
 	callers := map[string]bool{}
 	for _, source := range productionFiles(t) {
@@ -158,8 +158,8 @@ func TestOnlyReadAllReachesEveryTenant(t *testing.T) {
 			t.Errorf("%s imports the table without the tenant filter", source.path)
 		}
 	}
-	if len(callers) != 1 || !callers["ActivityService.ReadAll"] {
-		t.Errorf("everytenant.Entries is called from %v, want ActivityService.ReadAll only", callers)
+	if len(callers) != 2 || !callers["ActivityService.ReadAll"] || !callers["ActivityService.ReadEntry"] {
+		t.Errorf("everytenant.Entries is called from %v, want ActivityService.ReadAll and ReadEntry only", callers)
 	}
 }
 

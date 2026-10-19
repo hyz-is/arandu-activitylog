@@ -141,6 +141,8 @@ page, err := activity.Service().ReadAll(ctx, actor, activitylog.PlatformQuery{
 	Limit:   50,
 })
 // page.Entries[i].Tenant names whose entry it is.
+
+entry, err := activity.Service().ReadEntry(ctx, actor, id) // one entry, of any tenant
 ```
 
 Nil `PlatformPolicy` refuses everybody, and so do `ActivityPolicy` and

@@ -194,3 +194,40 @@ func TestThePlatformActionsAreNotAnOrganizationsToGrant(t *testing.T) {
 		t.Fatalf("PlatformActions() = %v", platform)
 	}
 }
+
+func TestThePlatformAdministratorReadsOneEntryOfAnyTenant(t *testing.T) {
+	db := openDatabase(t)
+	logger := newLogger(t, db, activitylog.Config{})
+	seedTenants(t, logger, 1, "acme", "globex")
+	ctx := context.Background()
+	svc := newService(t, db, activitylog.Config{PlatformPolicy: platformPolicy{}})
+
+	page, err := svc.ReadAll(ctx, manager(), activitylog.PlatformQuery{Tenants: []string{"globex"}})
+	if err != nil || len(page.Entries) != 1 {
+		t.Fatalf("the globex page held %d entries (%v)", len(page.Entries), err)
+	}
+	entry, err := svc.ReadEntry(ctx, manager(), page.Entries[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Tenant != "globex" || entry.ID != page.Entries[0].ID || entry.Description != "globex paid 0" {
+		t.Fatalf("the entry read is %+v", entry)
+	}
+
+	if _, err := svc.ReadEntry(ctx, manager(), "no-such-entry"); !errors.Is(err, activitylog.ErrNotFound) {
+		t.Fatalf("an entry nobody holds answered %v", err)
+	}
+	if _, err := svc.ReadEntry(ctx, member("globex"), page.Entries[0].ID); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("a member of the tenant read it through the platform read: %v", err)
+	}
+	if _, err := newService(t, db, activitylog.Config{}).ReadEntry(ctx, manager(), page.Entries[0].ID); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("with no PlatformPolicy the entry was read: %v", err)
+	}
+	inside, err := auth.ImpersonateActing(manager(), member("acme"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ReadEntry(ctx, inside, page.Entries[0].ID); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("a subject inside an account read another tenant's entry: %v", err)
+	}
+}

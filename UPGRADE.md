@@ -1,5 +1,16 @@
 # Upgrade Guide
 
+## v0.4.1
+
+Nothing to change: `ActivityService.ReadEntry` is new. An application that
+opened one entry of an organization's log from its platform console by
+reading it as somebody of that organization reads it with the platform read
+instead:
+
+```go
+entry, err := activity.Service().ReadEntry(ctx, actor, id) // PlatformEntry, its Tenant set
+```
+
 ## v0.4.0
 
 Nothing to change in code that calls this package: every addition is a new

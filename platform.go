@@ -3,6 +3,7 @@ package activitylog
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arandu-io/framework/security"
@@ -131,4 +132,32 @@ func (s *ActivityService) ReadAll(ctx context.Context, actor security.Subject, q
 		out.Entries = append(out.Entries, entryOf(row))
 	}
 	return out, nil
+}
+
+// ReadEntry is one entry of any tenant's log, by its identifier: the platform
+// administrator's read of a single entry, as ReadAll is of a page. It asks
+// Config.PlatformPolicy for ActivityViewAll, refuses a subject inside somebody
+// else's account before any policy, and answers ErrNotFound when no tenant
+// holds the entry. The answer is a PlatformEntry snapshot, which holds no
+// connection.
+func (s *ActivityService) ReadEntry(ctx context.Context, actor security.Subject, id string) (PlatformEntry, error) {
+	if actor.Impersonator != nil {
+		return PlatformEntry{}, fmt.Errorf("%w: a subject inside somebody else's account reads no other tenant", security.ErrForbidden)
+	}
+	g, err := security.Authorize(ctx, s.platform, actor, ActivityViewAll, Activity{})
+	if err != nil {
+		return PlatformEntry{}, err
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return PlatformEntry{}, ErrNotFound
+	}
+	row, err := everytenant.Entries(s.db).WhereKey(id).First(ctx, g)
+	if err != nil {
+		return PlatformEntry{}, err
+	}
+	if row == nil {
+		return PlatformEntry{}, ErrNotFound
+	}
+	return entryOf(row), nil
 }

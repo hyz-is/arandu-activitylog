@@ -10,6 +10,16 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-19
+
+### Added
+
+- `ActivityService.ReadEntry`: one entry of any tenant's log by its
+  identifier, the platform administrator's read of a single entry as
+  `ReadAll` is of a page. It asks `Config.PlatformPolicy` for
+  `ActivityViewAll`, refuses a subject inside somebody else's account, and
+  answers a `PlatformEntry` snapshot or `ErrNotFound`.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added
