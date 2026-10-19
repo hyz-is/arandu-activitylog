@@ -1,5 +1,19 @@
 # Upgrade Guide
 
+## v0.4.2
+
+Nothing to change: `ReadOwn`, `ReadOwnEntry`, `OwnQuery` and
+`ActivityViewOwn` are new. An application that showed a person their history
+one organization at a time -- a `List` with `Filter.Involves` per tenant the
+person belongs to -- reads it in one page across all of them:
+
+```go
+page, err := activity.Service().ReadOwn(ctx, subject, activitylog.OwnQuery{Cursor: cursor})
+```
+
+`ActivityViewOwn` is not declared in any catalogue: nobody grants a person
+their own history.
+
 ## v0.4.1
 
 Nothing to change: `ActivityService.ReadEntry` is new. An application that

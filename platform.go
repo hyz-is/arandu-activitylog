@@ -93,7 +93,13 @@ func (s *ActivityService) ReadAll(ctx context.Context, actor security.Subject, q
 	if err != nil {
 		return PlatformPage{}, err
 	}
-	limit := q.Limit
+	return s.everyTenant(ctx, g, q.Filter, q.Tenants, q.Cursor, q.Limit)
+}
+
+// everyTenant pages through the entries of every tenant, or of the tenants
+// named, that the filter keeps, newest first. It is reached only after a
+// policy allowed a read across tenants: ReadAll's, or ReadOwn's.
+func (s *ActivityService) everyTenant(ctx context.Context, g security.Grant, filter Filter, tenants []string, cursor string, limit int) (PlatformPage, error) {
 	switch {
 	case limit <= 0:
 		limit = defaultLimit
@@ -101,23 +107,23 @@ func (s *ActivityService) ReadAll(ctx context.Context, actor security.Subject, q
 		limit = maxLimit
 	}
 	page := everytenant.Entries(s.db)
-	narrow(page.Base(), q.Filter, s.cfg.CauserType)
-	if len(q.Tenants) > 0 {
-		tenants := make([]any, 0, len(q.Tenants))
-		for _, tenant := range q.Tenants {
-			tenants = append(tenants, tenant)
+	narrow(page.Base(), filter, s.cfg.CauserType)
+	if len(tenants) > 0 {
+		names := make([]any, 0, len(tenants))
+		for _, tenant := range tenants {
+			names = append(names, tenant)
 		}
-		page.WhereIn("tenant_id", tenants)
+		page.WhereIn("tenant_id", names)
 	}
-	if q.Cursor != "" {
-		anchor, err := everytenant.Entries(s.db).WhereKey(q.Cursor).Value(ctx, g, "created_at")
+	if cursor != "" {
+		anchor, err := everytenant.Entries(s.db).WhereKey(cursor).Value(ctx, g, "created_at")
 		if err != nil {
 			return PlatformPage{}, err
 		}
 		if anchor == nil {
 			return PlatformPage{}, nil
 		}
-		olderThan(page.Base(), anchor, q.Cursor)
+		olderThan(page.Base(), anchor, cursor)
 	}
 	rows, err := page.OrderByDesc("created_at").OrderByDesc("id").Limit(limit+1).Get(ctx, g)
 	if err != nil {
@@ -153,6 +159,60 @@ func (s *ActivityService) ReadEntry(ctx context.Context, actor security.Subject,
 		return PlatformEntry{}, ErrNotFound
 	}
 	row, err := everytenant.Entries(s.db).WhereKey(id).First(ctx, g)
+	if err != nil {
+		return PlatformEntry{}, err
+	}
+	if row == nil {
+		return PlatformEntry{}, ErrNotFound
+	}
+	return entryOf(row), nil
+}
+
+// OwnQuery is what ReadOwn reads: the narrowing every listing takes and the
+// page. Filter.Involves is the reader's, whatever it says.
+type OwnQuery struct {
+	Filter
+	// Cursor is NextCursor of the page before; empty is the first page.
+	Cursor string
+	// Limit is how many entries a page holds; zero is the default.
+	Limit int
+}
+
+// ReadOwn pages through a person's own entries in every tenant, newest first:
+// what the acting subject caused, and what an operator did inside its
+// account. It is the read a person has of their history -- "a user reads only
+// their own entries" -- beside the platform administrator's ReadAll.
+//
+// Every signed-in subject may read its own entries and nobody else's: the read
+// is narrowed to Filter.Involves naming the subject, as the Grant's subject,
+// and q.Filter.Involves is replaced. An operator inside somebody's account
+// reads the account's, which is what the account's owner sees. A guest is
+// refused.
+func (s *ActivityService) ReadOwn(ctx context.Context, actor security.Subject, q OwnQuery) (PlatformPage, error) {
+	g, err := security.Authorize(ctx, ownPolicy{}, actor, ActivityViewOwn, Activity{})
+	if err != nil {
+		return PlatformPage{}, err
+	}
+	filter := q.Filter
+	filter.Involves = Ref{Type: s.cfg.CauserType, ID: actor.ID}
+	return s.everyTenant(ctx, g, filter, nil, q.Cursor, q.Limit)
+}
+
+// ReadOwnEntry is one of a person's own entries, of any tenant: ErrNotFound
+// for an entry that does not exist and for one that is somebody else's alike,
+// so the answer says nothing about entries the reader may not see.
+func (s *ActivityService) ReadOwnEntry(ctx context.Context, actor security.Subject, id string) (PlatformEntry, error) {
+	g, err := security.Authorize(ctx, ownPolicy{}, actor, ActivityViewOwn, Activity{})
+	if err != nil {
+		return PlatformEntry{}, err
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return PlatformEntry{}, ErrNotFound
+	}
+	query := everytenant.Entries(s.db).WhereKey(id)
+	narrow(query.Base(), Filter{Involves: Ref{Type: s.cfg.CauserType, ID: actor.ID}}, s.cfg.CauserType)
+	row, err := query.First(ctx, g)
 	if err != nil {
 		return PlatformEntry{}, err
 	}

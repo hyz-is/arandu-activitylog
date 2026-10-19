@@ -19,6 +19,11 @@ const (
 	// Config.PlatformPolicy and of no other policy, and neither policy this
 	// package ships allows it.
 	ActivityViewAll security.Action = "activity.view_all"
+	// ActivityViewOwn is a person reading their own entries, of every tenant:
+	// what they caused, and what an operator did inside their account --
+	// ActivityService.ReadOwn. Nobody grants it: every signed-in subject
+	// holds it over its own entries, and over nobody else's.
+	ActivityViewOwn security.Action = "activity.view_own"
 )
 
 // Actions are the actions this package's policy answers about, for an
@@ -75,4 +80,22 @@ func (ActivityPolicy) Can(_ context.Context, s security.Subject, a security.Acti
 		return fmt.Errorf("activity belongs to another tenant")
 	}
 	return fmt.Errorf("no rule allows %s on activity", a)
+}
+
+// ownPolicy is the rule of ActivityViewOwn: a signed-in subject reads its own
+// entries. Which entries are its own is not the policy's to say -- the read
+// itself is narrowed to them, and to nothing else -- so the rule is only that
+// there is somebody to read them for.
+type ownPolicy struct{}
+
+var _ security.Policy[Activity] = ownPolicy{}
+
+func (ownPolicy) Can(_ context.Context, s security.Subject, a security.Action, _ Activity) error {
+	if a != ActivityViewOwn {
+		return fmt.Errorf("no rule allows %s on one's own activity", a)
+	}
+	if s.ID == "" || s.IsGuest() {
+		return fmt.Errorf("a guest has no activity of its own")
+	}
+	return nil
 }

@@ -231,3 +231,73 @@ func TestThePlatformAdministratorReadsOneEntryOfAnyTenant(t *testing.T) {
 		t.Fatalf("a subject inside an account read another tenant's entry: %v", err)
 	}
 }
+
+// A person reads their own entries in every tenant -- what they caused and
+// what an operator did inside their account -- and nobody else's.
+func TestAPersonReadsTheirOwnEntriesInEveryTenant(t *testing.T) {
+	db := openDatabase(t)
+	logger := newLogger(t, db, activitylog.Config{})
+	ctx := context.Background()
+	ana := security.Subject{ID: "ana", Tenant: "acme", Verified: true}
+	// Ana acts in two organizations; Bruno acts in one.
+	for _, tenant := range []string{"acme", "globex"} {
+		who := ana
+		who.Tenant = tenant
+		if _, err := logger.Activity(ctx, grantOf(t, who)).InLog("billing").Event("paid").Log("ana paid in " + tenant); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bruno := security.Subject{ID: "bruno", Tenant: "acme", Verified: true}
+	if _, err := logger.Activity(ctx, grantOf(t, bruno)).InLog("billing").Event("paid").Log("bruno paid"); err != nil {
+		t.Fatal(err)
+	}
+	// An operator inside Ana's account.
+	inside, err := auth.ImpersonateActing(manager(), ana)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := logger.Activity(ctx, grantOf(t, inside)).InLog("billing").Event("refunded").Log("refunded for ana"); err != nil {
+		t.Fatal(err)
+	}
+	svc := newService(t, db, activitylog.Config{})
+
+	page, err := svc.ReadOwn(ctx, ana, activitylog.OwnQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, entry := range page.Entries {
+		got[entry.Description] = entry.Tenant
+	}
+	if len(got) != 3 || got["ana paid in acme"] != "acme" || got["ana paid in globex"] != "globex" || got["refunded for ana"] != "acme" {
+		t.Fatalf("Ana's own entries are %v", got)
+	}
+
+	// The filter narrows, and Involves cannot be pointed at somebody else.
+	paid, err := svc.ReadOwn(ctx, ana, activitylog.OwnQuery{Filter: activitylog.Filter{Event: "paid", Involves: activitylog.Ref{Type: "user", ID: "bruno"}}})
+	if err != nil || len(paid.Entries) != 2 {
+		t.Fatalf("Ana's paid entries are %d (%v)", len(paid.Entries), err)
+	}
+	for _, entry := range paid.Entries {
+		if entry.Description == "bruno paid" {
+			t.Fatal("Involves read somebody else's entries")
+		}
+	}
+
+	// One entry: hers, or not found.
+	if entry, err := svc.ReadOwnEntry(ctx, ana, page.Entries[0].ID); err != nil || entry.ID != page.Entries[0].ID {
+		t.Fatalf("Ana's own entry: %+v (%v)", entry, err)
+	}
+	bruns, err := svc.ReadOwn(ctx, bruno, activitylog.OwnQuery{})
+	if err != nil || len(bruns.Entries) != 1 {
+		t.Fatalf("Bruno's own entries are %d (%v)", len(bruns.Entries), err)
+	}
+	if _, err := svc.ReadOwnEntry(ctx, ana, bruns.Entries[0].ID); !errors.Is(err, activitylog.ErrNotFound) {
+		t.Fatalf("Ana read Bruno's entry: %v", err)
+	}
+
+	// A guest has nothing of its own.
+	if _, err := svc.ReadOwn(ctx, security.Guest("acme"), activitylog.OwnQuery{}); !errors.Is(err, security.ErrForbidden) {
+		t.Fatalf("a guest read: %v", err)
+	}
+}

@@ -10,6 +10,20 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-19
+
+### Added
+
+- `ActivityService.ReadOwn` and `ReadOwnEntry`: a person reads their own
+  entries in every tenant -- what they caused and what an operator did inside
+  their account -- newest first, by the keyset `ReadAll` pages by, and one of
+  them by its identifier. Every signed-in subject may, over its own entries
+  only: the read is narrowed to `Filter.Involves` naming the subject whatever
+  the query says, and an entry of somebody else answers `ErrNotFound`. A
+  guest is refused. The rule is the package's, under the new action
+  `ActivityViewOwn` (`activity.view_own`), which nobody grants.
+- `OwnQuery`.
+
 ## [0.4.1] - 2026-10-19
 
 ### Added

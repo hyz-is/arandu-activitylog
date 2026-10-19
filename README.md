@@ -145,6 +145,21 @@ page, err := activity.Service().ReadAll(ctx, actor, activitylog.PlatformQuery{
 entry, err := activity.Service().ReadEntry(ctx, actor, id) // one entry, of any tenant
 ```
 
+### A person reads their own entries
+
+The other half of the rule: a person reads what they caused, and what an
+operator did inside their account, in every tenant, and nobody else's entries.
+`ReadOwn` needs no policy and no grant -- every signed-in subject holds it over
+its own entries -- and narrows the read to them whatever the query says:
+
+```go
+page, err := activity.Service().ReadOwn(ctx, subject, activitylog.OwnQuery{
+	Filter: activitylog.Filter{LogNames: []string{"billing"}},
+	Cursor: cursor,
+})
+entry, err := activity.Service().ReadOwnEntry(ctx, subject, id) // ErrNotFound when it is not theirs
+```
+
 Nil `PlatformPolicy` refuses everybody, and so do `ActivityPolicy` and
 `PermissionPolicy`: the read exists once the application writes the rule for
 its platform administrators. `activitylog.PlatformActions()` are declared apart
