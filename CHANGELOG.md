@@ -10,6 +10,28 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
+### Added
+
+- The migration `20261019_0001_widen_activity_log_time_precision`: the log's
+  `created_at` and `updated_at`, which an earlier framework default created in
+  whole seconds -- PostgreSQL rounds a value to the second there, MySQL
+  truncates it -- are raised to microseconds through Hesape's
+  `migrations.WidenTimePrecision`, so entries written within one second are
+  read newest first by the instant and not by the identifier alone. A column
+  already in microseconds is left alone, SQLite has nothing to widen, and the
+  rollback keeps the columns wide.
+
+### Changed
+
+- Requires Framework v0.58.0 and Hesape v0.69.0. Hesape declares a date-time
+  column in microseconds by default, and its `NewOrderedID` -- the identifier
+  of every entry, and the tie-break of every newest-first read -- is strictly
+  increasing within a process. The manifest's framework floor is `>= 0.58`.
+  The suite requires the PostgreSQL connector v0.11.0, and CI runs it against
+  a PostgreSQL service.
+
 ## [0.4.2] - 2026-10-19
 
 ### Added

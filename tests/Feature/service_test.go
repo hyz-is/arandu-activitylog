@@ -190,8 +190,8 @@ func TestTheModuleDeclaresItsTableScheduleAndRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := module.Migrations(); len(got) != 2 || got[0].GetName() >= got[1].GetName() {
-		t.Error("the module does not declare its table and the on_behalf_of column, in order")
+	if got := module.Migrations(); len(got) != 3 || got[0].GetName() >= got[1].GetName() || got[1].GetName() >= got[2].GetName() {
+		t.Error("the module does not declare its table, the on_behalf_of column and the widening of its instants, in order")
 	}
 	tasks := module.Schedule()
 	if len(tasks) != 1 || tasks[0].Scope != foundation.PerTenant || tasks[0].Action != activitylog.ActivityClean || tasks[0].Spec != activitylog.DefaultCleanSpec {

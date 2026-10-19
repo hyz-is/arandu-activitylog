@@ -299,7 +299,18 @@ func (m *Module) Schedule() []foundation.Task {
 
 // Migrations declares the schema this module owns.
 func (m *Module) Migrations() []foundation.Migration {
-	return []foundation.Migration{createActivityLogTable{}, addActivityLogOnBehalfOf{}}
+	return []foundation.Migration{createActivityLogTable{}, addActivityLogOnBehalfOf{}, widenActivityLogTimePrecision}
+}
+
+// widenActivityLogTimePrecision raises the log's two instants to microseconds
+// where an earlier framework default created them in whole seconds, which
+// PostgreSQL rounds a value to and MySQL truncates it to: entries written in
+// one second read back as one instant, and the newest-first order fell to the
+// identifier alone. A column already in microseconds is left alone, SQLite has
+// nothing to widen, and the rollback keeps the columns wide.
+var widenActivityLogTimePrecision = migrations.WidenTimePrecision{
+	Name:   "20261019_0001_widen_activity_log_time_precision",
+	Tables: []string{ActivityTable},
 }
 
 var _ migrations.ReversibleMigration = createActivityLogTable{}
