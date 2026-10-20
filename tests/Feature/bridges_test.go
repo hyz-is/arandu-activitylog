@@ -3,6 +3,7 @@ package feature_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,5 +99,61 @@ func TestTheMailLogRecordsEveryMessage(t *testing.T) {
 	}
 	if _, err := activitylog.NewMailTransport(outbox, logger, ""); err == nil {
 		t.Error("a mail log with no tenant was accepted")
+	}
+	if got[0].GetProperty("html", nil) != nil || got[0].GetProperty("text", nil) != nil {
+		t.Error("a transport without a redactor kept the body")
+	}
+}
+
+// The body is kept only as the application's redactor returns it: the code
+// the message carried never reaches the log, and a message the redactor
+// declines keeps the envelope alone.
+func TestTheMailLogKeepsTheRedactedBody(t *testing.T) {
+	db := openDatabase(t)
+	logger := newLogger(t, db, activitylog.Config{})
+	svc := newService(t, db, activitylog.Config{})
+	ctx := context.Background()
+	outbox := &mail.Array{}
+	watched, err := activitylog.NewMailTransport(outbox, logger, "platform")
+	if err != nil {
+		t.Fatal(err)
+	}
+	watched.WithBody(func(m mail.Message) (activitylog.MailBody, bool) {
+		if len(m.Tags) > 0 && m.Tags[0] == "private" {
+			return activitylog.MailBody{}, false
+		}
+		return activitylog.MailBody{HTML: strings.ReplaceAll(m.HTML, "123456", "[redacted]"), Text: strings.ReplaceAll(m.Text, "123456", "[redacted]")}, true
+	})
+	coded := mail.Message{Envelope: mail.Envelope{To: []mail.Address{{Email: "ana@example.test"}}, Subject: "Seu código", Tags: []string{"code"}},
+		HTML: "<p>Seu código é <b>123456</b></p>", Text: "Seu código é 123456"}
+	if err := watched.Send(ctx, coded); err != nil {
+		t.Fatal(err)
+	}
+	private := coded
+	private.Subject, private.Tags = "Particular", []string{"private"}
+	if err := watched.Send(ctx, private); err != nil {
+		t.Fatal(err)
+	}
+	if sent := outbox.Sent(); len(sent) != 2 || !strings.Contains(sent[0].HTML, "123456") {
+		t.Fatal("the redaction reached the message handed on")
+	}
+	got := entries(t, svc, "platform", activitylog.Filter{LogNames: []string{activitylog.MailLogName}})
+	if len(got) != 2 {
+		t.Fatalf("logged %d messages, want 2", len(got))
+	}
+	byTag := map[string]*activitylog.Activity{}
+	for _, entry := range got {
+		subject, _ := entry.GetProperty("subject", "").(string)
+		byTag[subject] = entry
+	}
+	kept := byTag["Seu código"]
+	if html, _ := kept.GetProperty("html", "").(string); html != "<p>Seu código é <b>[redacted]</b></p>" {
+		t.Errorf("html = %q", html)
+	}
+	if text, _ := kept.GetProperty("text", "").(string); text != "Seu código é [redacted]" || kept.GetProperty("body_redacted", nil) != true {
+		t.Errorf("text = %q, redacted = %v", text, kept.GetProperty("body_redacted", nil))
+	}
+	if byTag["Particular"].GetProperty("html", nil) != nil {
+		t.Error("a message the redactor declined kept its body")
 	}
 }

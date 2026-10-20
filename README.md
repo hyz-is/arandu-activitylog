@@ -114,6 +114,21 @@ transport, _ := activitylog.NewMailTransport(mailTransport(cfg.Mail), activity.L
 mailer := mail.New(transport, renderer, from)
 ```
 
+The entry keeps the envelope: recipients, subject, template tags, transport
+and the refusal. To keep the rendered body too, hand the transport the
+application's redactor, which returns the HTML and the text with every secret
+-- a one-time code, a sign-in link, a token -- replaced, or declines the
+message:
+
+```go
+transport.WithBody(func(m mail.Message) (activitylog.MailBody, bool) {
+	return redactByTemplate(m) // the application knows which template carries what
+})
+```
+
+The body lands under the properties `html` and `text`, with `body_redacted`.
+Only what the redactor returns is stored; the message handed on is untouched.
+
 ## Permissions
 
 `activitylog.Actions()` are the log's actions; declare them in

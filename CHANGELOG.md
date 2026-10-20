@@ -10,6 +10,18 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-20
+
+### Added
+
+- `MailTransport.WithBody`: the mail log keeps each message's rendered body,
+  as the application's `MailRedactor` returns it, under the entry's
+  properties `html` and `text` beside `body_redacted`. The redactor replaces
+  every secret a template carries -- a one-time code, a sign-in link, a token
+  -- or declines the message, which then keeps the envelope alone, as does
+  every message of a transport without one. The message handed on is never
+  changed. `MailBody`, `MailRedactor`.
+
 ## [0.5.0] - 2026-10-19
 
 ### Added

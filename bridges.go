@@ -108,6 +108,29 @@ type MailTransport struct {
 	next   mail.Transport
 	logger *Logger
 	tenant string
+	redact MailRedactor
+}
+
+// MailBody is what of a rendered message a MailTransport keeps in its entry:
+// the HTML and the text, as a MailRedactor returned them.
+type MailBody struct {
+	HTML, Text string
+}
+
+// MailRedactor decides what of a rendered message the mail log may keep: the
+// body with every secret it carries -- a one-time code, a sign-in link, a
+// token -- replaced, and whether to keep it at all. It is the application's,
+// because only the application knows which of its templates carries a secret
+// and in which field; the log is read by more people than the mailbox is.
+type MailRedactor func(m mail.Message) (MailBody, bool)
+
+// WithBody makes the transport keep each message's rendered body, as redact
+// returns it, under the entry's properties "html" and "text", beside
+// "body_redacted": true. A message redact declines keeps the envelope alone,
+// and so does every message of a transport without one, as before.
+func (t *MailTransport) WithBody(redact MailRedactor) *MailTransport {
+	t.redact = redact
+	return t
 }
 
 // NewMailTransport watches next, writing to the log of tenant -- the
@@ -149,6 +172,12 @@ func (t *MailTransport) Send(ctx context.Context, m mail.Message) error {
 	})
 	if sendErr != nil {
 		chain = chain.WithProperty("error", sendErr.Error())
+	}
+	if t.redact != nil {
+		if body, keep := t.redact(m); keep {
+			// WithProperties replaces the properties; these join them.
+			chain = chain.WithProperty("html", body.HTML).WithProperty("text", body.Text).WithProperty("body_redacted", true)
+		}
 	}
 	_, _ = chain.Log(description)
 	return sendErr
