@@ -1,15 +1,16 @@
 module github.com/hyz-is/arandu-activitylog
 
-go 1.26.0
+go 1.26.10
 
 require (
-	github.com/arandu-io/framework v0.58.0
-	github.com/arandu-io/hesape v0.69.0
+	github.com/arandu-io/framework v0.66.0
+	github.com/arandu-io/hesape v0.85.0
 	github.com/arandu-io/hesape/database/connectors/pgx v0.11.0
 	modernc.org/sqlite v1.57.0
 )
 
 require (
+	github.com/arandu-io/hesape/filesystem/s3 v0.11.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

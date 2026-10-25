@@ -5,7 +5,7 @@
 # never opens an installed package.
 
 name = "hyz-is/activitylog"
-framework = ">= 0.58"
+framework = ">= 0.66"
 profiles = ["conventional", "performance"]
 
 [permissions]
