@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 )
 
 // The actions the policy answers about. Recording is not one of them: an entry
@@ -47,6 +48,10 @@ type PermissionPolicy struct{}
 
 var _ security.Policy[Activity] = PermissionPolicy{}
 
+// Compile-time proof that the policy says which of its actions write: without
+// it the Grant issued to read the log would also be one that writes.
+var _ auth.Writes = PermissionPolicy{}
+
 // Can allows a granted action on an entry of the subject's tenant. It never
 // allows ActivityViewAll: an action an organization's group could be given is
 // not one that reads every organization, and the platform read is opened only
@@ -64,6 +69,10 @@ func (PermissionPolicy) Can(_ context.Context, s security.Subject, a security.Ac
 	return fmt.Errorf("the subject was not granted %s", a)
 }
 
+// Writes reports whether a Grant issued for the action may change anything.
+// Only ActivityClean writes; every read is issued a Grant that only reads.
+func (PermissionPolicy) Writes(a security.Action) bool { return writes(a) }
+
 // ActivityPolicy is the policy this package ships, and it denies everything.
 //
 // An application opens the log by passing its own policy in Config.Policy,
@@ -72,6 +81,8 @@ func (PermissionPolicy) Can(_ context.Context, s security.Subject, a security.Ac
 type ActivityPolicy struct{}
 
 var _ security.Policy[Activity] = ActivityPolicy{}
+
+var _ auth.Writes = ActivityPolicy{}
 
 // Can refuses every action. A record of another tenant is refused first, so a
 // policy written by copying this one keeps the line that matters most.
@@ -82,6 +93,16 @@ func (ActivityPolicy) Can(_ context.Context, s security.Subject, a security.Acti
 	return fmt.Errorf("no rule allows %s on activity", a)
 }
 
+// Writes reports whether a Grant issued for the action may change anything,
+// so a policy written by copying this one keeps the reads read-only.
+func (ActivityPolicy) Writes(a security.Action) bool { return writes(a) }
+
+// writes is the one answer the policies this package ships give: the actions
+// that change the log are enumerated, and everything else reads, so an action
+// added without a decision here fails the first time it tries to write
+// rather than writing under a name that says it only looks.
+func writes(a security.Action) bool { return a == ActivityClean }
+
 // ownPolicy is the rule of ActivityViewOwn: a signed-in subject reads its own
 // entries. Which entries are its own is not the policy's to say -- the read
 // itself is narrowed to them, and to nothing else -- so the rule is only that
@@ -89,6 +110,12 @@ func (ActivityPolicy) Can(_ context.Context, s security.Subject, a security.Acti
 type ownPolicy struct{}
 
 var _ security.Policy[Activity] = ownPolicy{}
+
+var _ auth.Writes = ownPolicy{}
+
+// Writes answers false for every action: reading one's own entries changes
+// nothing.
+func (ownPolicy) Writes(security.Action) bool { return false }
 
 func (ownPolicy) Can(_ context.Context, s security.Subject, a security.Action, _ Activity) error {
 	if a != ActivityViewOwn {

@@ -23,6 +23,14 @@ v0.63.0 declares `security.SessionStore` as an alias of hesape's
 on Framework v0.66.0 passes the store and the router it already builds and
 changes nothing; one that stays on an older Framework cannot take this release.
 
+`PermissionPolicy` and `ActivityPolicy` implement `auth.Writes`: only
+`ActivityClean` writes, and a Grant `security.Authorize` issues for
+`ActivityView`, `ActivityViewAll` or `ActivityViewOwn` only reads, so the
+database refuses any insert, update or delete made with it
+(`auth.ErrReadGrant`). Nothing in this package writes with such a Grant. An
+application whose own `Config.Policy` or `Config.PlatformPolicy` reads the log
+gets the same protection by implementing `auth.Writes` on it.
+
 ## v0.5.0
 
 Run `aru migrate`: `20261019_0001_widen_activity_log_time_precision` raises the

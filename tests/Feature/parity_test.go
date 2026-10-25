@@ -3,12 +3,14 @@ package feature_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/console"
 
 	activitylog "github.com/hyz-is/arandu-activitylog"
@@ -244,6 +246,43 @@ func TestThePermissionPolicyDecidesByGrantedActions(t *testing.T) {
 	}
 	if len(activitylog.Actions()) != 2 {
 		t.Errorf("Actions = %v", activitylog.Actions())
+	}
+}
+
+// The shipped policies say which of their actions write: a Grant issued to
+// read the log only reads, so whatever holds it cannot change a row, and
+// only the clean writes.
+func TestAGrantToReadTheLogOnlyReads(t *testing.T) {
+	ctx := context.Background()
+	reads := []security.Action{activitylog.ActivityView, activitylog.ActivityViewAll, activitylog.ActivityViewOwn}
+	for name, policy := range map[string]auth.Writes{
+		"PermissionPolicy": activitylog.PermissionPolicy{},
+		"ActivityPolicy":   activitylog.ActivityPolicy{},
+	} {
+		for _, a := range reads {
+			if policy.Writes(a) {
+				t.Errorf("%s says %s writes", name, a)
+			}
+		}
+		if !policy.Writes(activitylog.ActivityClean) {
+			t.Errorf("%s says %s does not write", name, activitylog.ActivityClean)
+		}
+	}
+
+	subject := security.Subject{ID: "u1", Tenant: "acme", Actions: []security.Action{activitylog.ActivityView, activitylog.ActivityClean}}
+	view, err := security.Authorize(ctx, activitylog.PermissionPolicy{}, subject, activitylog.ActivityView, activitylog.Activity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.Writable(view); !errors.Is(err, auth.ErrReadGrant) {
+		t.Errorf("the Grant to view the log writes: %v", err)
+	}
+	clean, err := security.Authorize(ctx, activitylog.PermissionPolicy{}, subject, activitylog.ActivityClean, activitylog.Activity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.Writable(clean); err != nil {
+		t.Errorf("the Grant to clean the log does not write: %v", err)
 	}
 }
 
