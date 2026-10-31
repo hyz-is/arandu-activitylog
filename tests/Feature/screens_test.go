@@ -11,6 +11,7 @@ import (
 
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 	hhttp "github.com/arandu-io/hesape/http"
 
 	activitylog "github.com/hyz-is/arandu-activitylog"
@@ -148,5 +149,39 @@ func TestTheScreensPageWithoutCountingUnderSimplePagination(t *testing.T) {
 	}
 	if _, _, _, next := draw(true, "2"); next != "" {
 		t.Errorf("the last simple page links to %q", next)
+	}
+}
+
+// The screens decide with the subject a middleware already put on the request:
+// arandu-permission's Roles leaves it there with the actions it resolved, and a
+// reader who holds activity.view reads the log. Loading the session again would
+// lose those actions and refuse them; a subject without the action is still
+// refused.
+func TestTheScreensReadTheSubjectTheRequestCarries(t *testing.T) {
+	db := openDatabase(t)
+	sessions := security.NewSessionStore([]byte("0123456789abcdef0123456789abcdef"), time.Hour, false, security.NewMemoryBackend())
+	module, err := activitylog.New(activitylog.Config{Tenant: "acme", Screens: true, Policy: activitylog.PermissionPolicy{}}, db, sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := fhttp.NewRouter()
+	module.Routes(router.ForModule(module.Name()))
+
+	read := func(subject security.Subject) int {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, activitylog.DefaultPrefix, nil)
+		request.Header.Set("Accept", hhttp.ViewDataMediaType)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request.WithContext(auth.WithSubject(request.Context(), subject)))
+		return response.Code
+	}
+
+	reader := member("acme")
+	reader.Actions = []security.Action{activitylog.ActivityView}
+	if code := read(reader); code != http.StatusOK {
+		t.Errorf("a reader holding %s was answered %d", activitylog.ActivityView, code)
+	}
+	if code := read(member("acme")); code != http.StatusForbidden {
+		t.Errorf("a member without %s was answered %d, want 403", activitylog.ActivityView, code)
 	}
 }

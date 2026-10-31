@@ -10,6 +10,16 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-31
+
+### Fixed
+
+- The screens and the JSON read routes decide with the subject a middleware
+  already put on the request, before loading the session again. Behind
+  arandu-permission's `Roles`, an administrator holding `activity.view` was
+  answered 403: the session held the subject as it was stored, without the
+  actions `Roles` resolved, and `PermissionPolicy` refused it.
+
 ## [0.7.0] - 2026-10-25
 
 ### Changed

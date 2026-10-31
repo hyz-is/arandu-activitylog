@@ -54,6 +54,7 @@ import (
 	"github.com/arandu-io/framework/foundation"
 	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/database/migrations"
 	"github.com/arandu-io/hesape/database/schema"
 )
@@ -169,6 +170,14 @@ func (m *Module) show(ctx *fhttp.Context) error {
 // subject is who is reading: the session's subject, or a guest of the
 // configured tenant when there is none.
 func (m *Module) subject(r *stdhttp.Request) security.Subject {
+	// The subject a middleware already put on the request is the one every
+	// policy of the application reads: arandu-permission's Roles leaves it
+	// there with the actions it resolved. Loading the session again would
+	// answer the subject as it was stored, without those actions, and
+	// PermissionPolicy would refuse a reader who holds activity.view.
+	if carried, ok := auth.SubjectFrom(r.Context()); ok && carried.ID != "" {
+		return carried
+	}
 	sub, err := m.sessions.Load(r.Context(), r)
 	if err != nil || sub.ID == "" {
 		return security.Guest(m.cfg.Tenant)
